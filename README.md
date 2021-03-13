@@ -3,6 +3,6 @@
 This repository contains solutions to the assignemtns for the course Network Programming (IS 462) offered at BITS Pilani
 
 Contributors:
-- Pranav Gupta (github)
-- Shreyans Jain (github)
-- Harshit Garg (github)
+- [Pranav Gupta](https://github.com/pranagupt)
+- [Shreyans Jain](https://github.com/jshreyans)
+- [Harshit Garg](https://github.com/harshitgarg22)
