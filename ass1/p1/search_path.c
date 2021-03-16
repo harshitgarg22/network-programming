@@ -1,5 +1,11 @@
+#include <stdio.h>
+#include <stdlib.h>
+#include <string.h>
+#include <sys/stat.h>
+#include <errno.h>
+#include <stdbool.h>
+#include "constants.h"
 #include "search_path.h"
-
 
 char *search_path(char *cmd) {
     char *canonical_path = NULL;
@@ -17,8 +23,11 @@ char *search_path(char *cmd) {
         // test whether this path exists in the file system or not
         struct stat statbuff;
         if (stat(complete_path, &statbuff) == -1) {
-            // TODO - handle other exceptions
-            printf("NO SUCH FILE FOUND\n\n");   
+            if (errno != ENOENT) {
+                fprintf(stderr, "!! ERROR: %s !!\n", strerror(errno));
+                printf("Exiting...\n");
+                exit(-1);
+            }
         }
         else {
             // file exists because stat returns true value
@@ -30,11 +39,11 @@ char *search_path(char *cmd) {
 
         if (found) {
             canonical_path = strdup(complete_path);
+            free(complete_path);
             break;
         }
         free(complete_path);
         token = strtok(NULL, ":");  // repeat same process for next directory in PATH
     }
-
     return canonical_path;
 }
