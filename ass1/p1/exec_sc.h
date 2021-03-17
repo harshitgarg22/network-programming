@@ -14,10 +14,6 @@ typedef struct lookup_table {
 // create global lookup table
 LKP_TABLE* create_table();
 
-// check if table contains entry for this key
-// return 1 if yes, 0 if not
-bool has_entry(LKP_TABLE* sc_table, int key);
-
 // insert entry into table for this key and assign command
 // return key if successful, -1 if not
 int insert_entry(LKP_TABLE* sc_table, int key, char *cmd);

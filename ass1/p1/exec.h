@@ -8,4 +8,5 @@ int count_args(char *cmd);
 // handle redirection operators <, > and >>
 char *handle_redirection(char *cmd);
 
+// execute complete sequence of commands (one process group)
 int exec(char *cmd);
