@@ -4,10 +4,15 @@
 #include <unistd.h>
 #include <errno.h>
 #include <fcntl.h>
-#include "exec.h"
-#include "search_path.h"
 
-int exec_cmd(char *cmd) {
+#include "exec.h"
+#include "exec_sc.h"
+#include "search_path.h"
+#include "constants.h"
+
+extern LKP_TABLE *sc_table;
+
+int exec_single_cmd(char *cmd) {
     int num_args = count_args(cmd);
     printf("%d\n", num_args);
     char *dup_cmd = strdup(cmd);
@@ -24,6 +29,11 @@ int exec_cmd(char *cmd) {
     }
     cmd_args[i] = NULL;  // null-terminate for iteration
     free(dup_cmd);
+
+    if (strcmp(cmd_args[0], "sc") == 0) {
+        // sc command
+        exec_sc(cmd, sc_table);
+    }
 
     char *canonical_path = search_path(cmd_args[0]);
     if (canonical_path == NULL) {
@@ -98,7 +108,7 @@ char *handle_redirection(char *cmd) {
         else if (*(cmd + strlen(token)) == '<') {
             // read from file
             file = cmd + strlen(token) + 1;
-            int input_fd = open(file, O_CREAT | O_RDONLY, S_IRUSR | S_IRGRP | S_IROTH);
+            int input_fd = open(file, O_RDONLY);
             if (input_fd == -1) {
                 fprintf(stderr, "Could not open file for redirected input\n");
                 fprintf(stderr, "%s\n", strerror(errno));
@@ -113,3 +123,23 @@ char *handle_redirection(char *cmd) {
     }
     return cmd;
 }
+
+// int exec_cmd(char *cmd) {
+//     /*
+//     command can contain:
+//     -  pipe operators               |, ||, |||
+//     -  background process operator  &
+//     -  redirection operators        >, <, >>
+//     -  sc command                   sc -i/-d <index> <cmd>
+//     */
+
+//     // check for background process
+//     char *dup_cmd = strdup(cmd);
+//     if (strstr(dup_cmd, "&") != NULL) {
+//         char *token = strtok(dup_cmd, "&");
+//         //execute command in background
+//         exec_in_bg(token);
+//         free(token);
+//     }
+//     free(dup_cmd);
+// }

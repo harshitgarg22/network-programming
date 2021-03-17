@@ -1,11 +1,15 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <stdbool.h>
-
+#include "exec_sc.h"
 #include "constants.h"
 
 int main(int argc, char* argv[]) {
     printf("New shell created!");
+
+    // initalise lookup table
+    LKP_TABLE *sc_table = create_table();
+
     while (true) {
         printf("$ ");   // bash style prompt
         char* cmd_buff = (char*)malloc(sizeof(char) * MAX_CMD_LEN);
@@ -16,6 +20,5 @@ int main(int argc, char* argv[]) {
             continue;
         }
 
-        
     }
 }
