@@ -4,3 +4,6 @@ int exec_cmd(char *cmd);
 
 //count number of tokens in single command
 int count_args(char *cmd);
+
+// handle redirection operators
+char *handle_redirection(char *cmd);
