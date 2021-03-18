@@ -33,12 +33,13 @@ int exec_single_cmd(char *cmd) {
     if (strcmp(cmd_args[0], "sc") == 0) {
         // sc command
         exec_sc(cmd, sc_table);
+        return 0;
     }
 
     char *canonical_path = search_path(cmd_args[0]);
     if (canonical_path == NULL) {
         fprintf(stderr, "%s: not found\n", cmd_args[0]);
-        return 0;
+        return -1;
     }
 
     if (execv(canonical_path, cmd_args) == -1) {
@@ -46,6 +47,7 @@ int exec_single_cmd(char *cmd) {
         fprintf(stderr, "%s\n", strerror(errno));
     }
     free(canonical_path);
+    return 0;
 }
 
 int count_args(char *cmd) {
@@ -77,7 +79,7 @@ char *handle_redirection(char *cmd) {
         if (*(cmd + strlen(token) + 1) == '>') {
             // append to file
             file = cmd + strlen(token) + 2;
-            int output_fd = open(file, O_CREAT | O_WRONLY | O_APPEND, S_IWUSR | S_IWGRP);
+            int output_fd = open(file, O_CREAT|O_WRONLY|O_APPEND, S_IRWXU|S_IRWXG|S_IRWXO);
             if (output_fd == -1) {
                 fprintf(stderr, "Could not open file for redirected append\n");
                 fprintf(stderr, "%s\n", strerror(errno));
@@ -93,7 +95,7 @@ char *handle_redirection(char *cmd) {
         else if (*(cmd + strlen(token)) == '>') {
             // write to file (clear any previous content)
             file = cmd + strlen(token) + 1;
-            int output_fd = open(file, O_CREAT | O_WRONLY, S_IWUSR | S_IWGRP);
+            int output_fd = open(file, O_CREAT|O_WRONLY, S_IRWXU|S_IRWXG|S_IRWXO);
             if (output_fd == -1) {
                 fprintf(stderr, "Could not open file for redirected output\n");
                 fprintf(stderr, "%s\n", strerror(errno));
@@ -124,22 +126,24 @@ char *handle_redirection(char *cmd) {
     return cmd;
 }
 
-// int exec_cmd(char *cmd) {
-//     /*
-//     command can contain:
-//     -  pipe operators               |, ||, |||
-//     -  background process operator  &
-//     -  redirection operators        >, <, >>
-//     -  sc command                   sc -i/-d <index> <cmd>
-//     */
+int exec_cmd(char *cmd) {
+    /*
+    command can contain:
+    -  pipe operators               |, ||, |||
+    -  background process operator  &
+    -  redirection operators        >, <, >>
+    -  sc command                   sc -i/-d <index> <cmd>
+    */
 
-//     // check for background process
-//     char *dup_cmd = strdup(cmd);
-//     if (strstr(dup_cmd, "&") != NULL) {
-//         char *token = strtok(dup_cmd, "&");
-//         //execute command in background
-//         exec_in_bg(token);
-//         free(token);
-//     }
-//     free(dup_cmd);
-// }
+    // check for background process
+    char *dup_cmd = strdup(cmd);
+    if (strstr(dup_cmd, "&") != NULL) {
+        char *token = strtok(dup_cmd, "&");
+        //execute command in background
+        exec_in_bg(token);
+        free(token);
+    }
+    free(dup_cmd);
+
+
+}

@@ -2,3 +2,4 @@
 #define MAX_CMD_LEN                 50          /* max size of one command restricted to 50 characters */
 #define ENV                         "PATH"      /* environment variable */
 #define MAX_LOOKUP_TABLE_SIZE       10          /* maximum number of entries allowed in the lookup table */
+#define MAX_NUM_CMDS_ALLOWED        100         /* maximum number of commands that can exist as children of the shell simultaneously */
