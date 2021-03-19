@@ -8,5 +8,9 @@ int count_args(char *cmd);
 // handle redirection operators <, > and >>
 char *handle_redirection(char *cmd);
 
-// execute complete sequence of commands (one process group)
-int exec(char *cmd);
+/*
+Execute a complete process group
+One group may contain a sequence of commands 
+or just a single command
+*/
+int exec_cmd(char *cmd);

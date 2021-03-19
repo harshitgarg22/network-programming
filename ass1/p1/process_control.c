@@ -4,6 +4,8 @@
 
 #include "process_control.h"
 
+command *curr_commands[MAX_NUM_CMDS_ALLOWED];
+
 int add_proc(command *cmd) {
     for (int i = 0; i < MAX_NUM_CMDS_ALLOWED; i++) {
         if (curr_commands[i] == NULL) {

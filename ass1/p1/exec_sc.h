@@ -23,4 +23,4 @@ int insert_entry(LKP_TABLE* sc_table, int key, char *cmd);
 int delete_entry(LKP_TABLE* sc_table, int key);
 
 // execute the sc command
-int exec_sc(char *cmd, LKP_TABLE *sc_table)
+int exec_sc(char *cmd, LKP_TABLE *sc_table);

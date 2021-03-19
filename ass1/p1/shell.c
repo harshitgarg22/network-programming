@@ -4,26 +4,39 @@
 #include <unistd.h>
 #include <sys/wait.h>
 #include <signal.h>
+#include <string.h>
 
 #include "constants.h"
 #include "exec.h"
-#include "exec_sc.h"
-#include "process_control.h"
+// #include "exec_sc.h"
+// #include "process_control.h"
 
 int main(int argc, char* argv[]) {
-    printf("New shell created!");
+    printf("New shell created!\n\n");
+
+    printf("////////////////////////////////////////////\n\n");
+    printf("\t\tSHELL PROCESS\n");
+    printf("\t\tPID:%d\n", getpid());
+    printf("\t\tPGID:%d\n\n", getpgid(getpid()));
+    printf("////////////////////////////////////////////\n");
 
     // initalise lookup table
-    LKP_TABLE *sc_table = create_table();
+    // LKP_TABLE *sc_table = create_table();
 
     while (true) {
-        printf("$ ");   // bash style prompt
+        printf("\n[shell]-> ");   // bash style prompt
         char* cmd_buff = (char*)malloc(sizeof(char) * MAX_CMD_LEN);
         size_t cmd_len = MAX_CMD_LEN + 1;
         ssize_t cmd_inp_len = getline(&cmd_buff, &cmd_len, stdin);  // coz scanf is for noobs, you noob
 
         if (cmd_inp_len <= 0 ||  (cmd_inp_len == 1 && cmd_buff[0] == '\n')) {
             continue;
+        }
+        cmd_buff[cmd_inp_len-1] = 0;
+        if (strcmp(cmd_buff, "exit") == 0) {
+            printf("\nExiting terminal...\n\n");
+            free(cmd_buff);
+            break;
         }
 
         // check for background process
@@ -37,7 +50,7 @@ int main(int argc, char* argv[]) {
 
         if (child_exec_proc < 0) {
             fprintf(stderr, "Error spawning new process group for this command. Exiting...\n\n");
-            exit(0);
+            exit(1);
         }
         else if (child_exec_proc == 0) {
             // inside child process
@@ -47,7 +60,13 @@ int main(int argc, char* argv[]) {
             printf("\tProcess Grp ID : %d\n", getpgid(curr_pid));
             printf("\n");
 
-            exec(cmd_buff);            
+            ///////////////////////////////////////////////////////////////////////////
+            if (exec_single_cmd(cmd_buff) == -1) {
+                printf("execution of '%s' failed\n", cmd_buff);
+                exit(EXIT_FAILURE);
+            }
+            exit(EXIT_SUCCESS);
+            ///////////////////////////////////////////////////////////////////////////
         }
         else {
             // set process group id to curr_pid
@@ -59,41 +78,49 @@ int main(int argc, char* argv[]) {
             if (!is_bg_process) {
                 // set disposition of SIGTTOU to ignore so that parent can still print output to terminal
                 signal(SIGTTOU, SIG_IGN);
-                //set the child pid as the foreground process group id and set stdin as the controlling terminal file
+                //set the child pid as the foreground process group id and the controlling terminal
                 if (tcsetpgrp(STDIN_FILENO, child_exec_proc) == -1) {
-                    fprintf(stderr, "Unable to bring process grp tp foreground. Exiting...\n\n");
+                    fprintf(stderr, "Unable to bring process grp to foreground. Exiting...\n\n");
                     exit(0);
+                }
+                else {
+                    printf("controlling terminal is now %d\n", tcgetpgrp(0));
                 }
             }
 
-            command *cmd = malloc(sizeof(command));
-            cmd->cmd = cmd_buff;
-            cmd->is_bg = is_bg_process;
-            cmd->pgid = child_exec_proc;
+            // command *cmd = malloc(sizeof(command));
+            // cmd->cmd = cmd_buff;
+            // cmd->is_bg = is_bg_process;
+            // cmd->pgid = child_exec_proc;
 
-            add_proc(cmd);
+            // add_proc(cmd);
             int child_proc_status;
             if (!is_bg_process) {
-                // wait for the process to either finish execution or terminate otherwise
+                // wait for the process to either finish execution or terminate
                 while (1) {
-                    waitpid(child_proc_status, &child_proc_status, WUNTRACED);
+                    waitpid(child_exec_proc, &child_proc_status, WUNTRACED);
                     if (WIFEXITED(child_proc_status) || WIFSIGNALED(child_proc_status)) {
-                        remove_proc(child_exec_proc);
+                        printf("\n\nProcess done executing-----------\n\n");
+                        // remove_proc(child_exec_proc);
                         break;
                     }
                     if (WIFSTOPPED(child_proc_status)) {
                         // child process was stopped by a signal
-                        set_proc_status(child_exec_proc, STOPPED);
+                        printf("\n\nProcess stopped by signal %d\n", WSTOPSIG(child_proc_status));
+                        // set_proc_status(child_exec_proc, STOPPED);
                         break;
                     }
                 }
 
                 // give control back to the shell process
                 tcsetpgrp(STDIN_FILENO, getpid());
+                printf("returning controll to shell process\n");
+                printf("controlling terminal is now - %d\n", tcgetpgrp(0));
                 // reset disposition to default
                 signal(SIGTTOU, SIG_DFL);
             }
         }
         // printf("here\n");
     }
+    return 0;
 }

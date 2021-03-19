@@ -4,6 +4,7 @@
 #include <sys/stat.h>
 #include <errno.h>
 #include <stdbool.h>
+
 #include "constants.h"
 #include "search_path.h"
 
