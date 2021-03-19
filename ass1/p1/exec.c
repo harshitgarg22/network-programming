@@ -44,7 +44,7 @@ int exec_single_cmd(char *cmd) {
 
     char *canonical_path = search_path(cmd_args[0]);
     if (canonical_path == NULL) {
-        fprintf(stderr, "%s: not found\n", cmd_args[0]);
+        fprintf(stderr, "%s: command not found\n", cmd_args[0]);
         return -1;
     }
 
@@ -69,66 +69,66 @@ int count_args(char *cmd) {
     return num_token;
 }
 
+char *remove_spaces(char *filename) {
+    char *clean_name = malloc(sizeof(char) * strlen(filename));
+    int j = 0;
+    for (int i = 0; i < strlen(filename); i++) {
+        if (filename[i] != ' ') {
+            clean_name[j++] = filename[i];
+        }
+    }
+    clean_name[j] = '\0';
+    return clean_name;
+}
+
 char *handle_redirection(char *cmd) {
     char *dup_cmd = strdup(cmd);
     char *token = strtok(dup_cmd, "<>");
 
-    /*
-    character pointed to by cmd+strlen(token) is either < or >
-    if cmd+strlen(token)+1 is >, then it means the command contains >> operator
-    so check for that first and then check for > or <
-    */
-
-    if (strcmp(token,dup_cmd) != 0) {
-        // cmd contains redirection operators
+    if (strcmp(cmd, token) != 0) {
+        // string contains either < or > or both
         char *file;
-        if (*(cmd + strlen(token) + 1) == '>') {
-            // append to file
-            file = cmd + strlen(token) + 2;
-            int output_fd = open(file, O_CREAT|O_WRONLY|O_APPEND, S_IRWXU|S_IRWXG|S_IRWXO);
-            if (output_fd == -1) {
-                fprintf(stderr, "Could not open file for redirected append\n");
-                fprintf(stderr, "%s\n", strerror(errno));
+        if (strstr(cmd, ">>") != NULL) {
+            file = remove_spaces(cmd + strlen(token) + 2);
+            int fd;
+            if ((fd = open(file, O_CREAT | O_WRONLY | O_APPEND, 0644)) < 0) {
+                printf("bad\n");
+                perror("Could not open file for append op\n");
+                return NULL;
             }
-            else {
-                // TODO close write fd of output_fd
-                close(1);  // close stdout
-                dup(output_fd);  // duplicate output fd to redirect output
-            }
-            free(dup_cmd);
+            printf("appending output of '%s' to file '%s'\n", token, file);
+            dup2(fd, 1);
+            // free(dup_cmd);
             return token;
         }
-        else if (*(cmd + strlen(token)) == '>') {
-            // write to file (clear any previous content)
-            file = cmd + strlen(token) + 1;
-            int output_fd = open(file, O_CREAT|O_WRONLY, S_IRWXU|S_IRWXG|S_IRWXO);
-            if (output_fd == -1) {
-                fprintf(stderr, "Could not open file for redirected output\n");
-                fprintf(stderr, "%s\n", strerror(errno));
+        else if (strstr(cmd, ">") != NULL) {
+            file = remove_spaces(cmd + strlen(token) + 1);
+            int fd;
+            if ((fd = open(file, O_CREAT | O_TRUNC | O_WRONLY, 0644)) < 0) {
+                printf("bad\n");
+                perror("Could not open file for write op\n");
+                return NULL;
             }
-            else {
-                close(1);  // close stdout
-                dup(output_fd);  // duplicate output fd to redirect output
-            }
-            free(dup_cmd);
+            printf("writing output of '%s' to file '%s'\n", token, file);
+            dup2(fd, 1);
+            // free(dup_cmd);
             return token;
         }
-        else if (*(cmd + strlen(token)) == '<') {
-            // read from file
-            file = cmd + strlen(token) + 1;
-            int input_fd = open(file, O_RDONLY);
-            if (input_fd == -1) {
-                fprintf(stderr, "Could not open file for redirected input\n");
-                fprintf(stderr, "%s\n", strerror(errno));
+        else if (strstr(cmd, "<") != NULL) {
+            file = remove_spaces(cmd + strlen(token) + 1);
+            int fd;
+            if ((fd = open(file, O_CREAT | O_WRONLY, 0644)) < 0) {
+                printf("bad\n");
+                perror("Could not open file for read op\n");
+                return NULL;
             }
-            else {
-                close(1);  // close stdout
-                dup(input_fd);  // duplicate output fd to redirect output
-            }
-            free(dup_cmd);
+            printf("reading input for '%s' from file '%s'\n", token, file);
+            dup2(fd, 0);
+            // free(dup_cmd);
             return token;
         }
     }
+    free(dup_cmd);
     return cmd;
 }
 
@@ -138,6 +138,14 @@ int exec_cmd(char *cmd) {
     cmd contains the complete string and the first command in the string will
     be the process group leader
     */
+
+    char *redirected_cmd = handle_redirection(cmd);
+    if (exec_single_cmd(redirected_cmd) == -1) {
+        exit(EXIT_FAILURE);
+    }
+    exit(EXIT_SUCCESS);
+
+    /*
     int fg_process_sync[2];
     pipe(fg_process_sync);
 
@@ -174,4 +182,5 @@ int exec_cmd(char *cmd) {
         }
     }
     exit(EXIT_FAILURE);
+    */
 }

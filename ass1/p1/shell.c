@@ -8,23 +8,25 @@
 
 #include "constants.h"
 #include "exec.h"
+#include "colors.h"
 // #include "exec_sc.h"
 // #include "process_control.h"
 
 int main(int argc, char* argv[]) {
-    printf("New shell created!\n\n");
 
-    printf("////////////////////////////////////////////\n\n");
-    printf("\t\tSHELL PROCESS\n");
-    printf("\t\tPID:%d\n", getpid());
-    printf("\t\tPGID:%d\n\n", getpgid(getpid()));
-    printf("////////////////////////////////////////////\n");
-
+    green();
+    printf("\n\n============================================\n\n");
+    printf("\t   << SHELL PROCESS >>\n");
+    printf("\n\t PID:%d | PGID:%d", getpid(), getpgid(getpid()));
+    printf("\n\n============================================\n");
+    reset();
     // initalise lookup table
     // LKP_TABLE *sc_table = create_table();
 
     while (true) {
+        cyan();
         printf("\n[shell]-> ");   // bash style prompt
+        reset();
         char* cmd_buff = (char*)malloc(sizeof(char) * MAX_CMD_LEN);
         size_t cmd_len = MAX_CMD_LEN + 1;
         ssize_t cmd_inp_len = getline(&cmd_buff, &cmd_len, stdin);  // coz scanf is for noobs, you noob
@@ -34,7 +36,9 @@ int main(int argc, char* argv[]) {
         }
         cmd_buff[cmd_inp_len-1] = 0;
         if (strcmp(cmd_buff, "exit") == 0) {
-            printf("\nExiting terminal...\n\n");
+            green();
+            printf("\nEXITING TERMINAL...\n\n");
+            reset();
             free(cmd_buff);
             break;
         }
@@ -61,11 +65,7 @@ int main(int argc, char* argv[]) {
             printf("\n");
 
             ///////////////////////////////////////////////////////////////////////////
-            if (exec_single_cmd(cmd_buff) == -1) {
-                printf("execution of '%s' failed\n", cmd_buff);
-                exit(EXIT_FAILURE);
-            }
-            exit(EXIT_SUCCESS);
+            exec_cmd(cmd_buff);
             ///////////////////////////////////////////////////////////////////////////
         }
         else {
