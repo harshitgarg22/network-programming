@@ -60,9 +60,8 @@ int main(int argc, char* argv[]) {
             // inside child process
             int curr_pid = getpid();
             printf("Starting execution of new command group\n");
-            printf("\tProcess ID : %d\n", curr_pid);
             printf("\tProcess Grp ID : %d\n", getpgid(curr_pid));
-            printf("\n");
+            printf("==========================================\n");
 
             ///////////////////////////////////////////////////////////////////////////
                                         exec_cmd(cmd_buff);
@@ -84,7 +83,7 @@ int main(int argc, char* argv[]) {
                     exit(0);
                 }
                 else {
-                    printf("controlling terminal is now %d\n", tcgetpgrp(0));
+                    printf("Controlling terminal is now %d\n", tcgetpgrp(0));
                 }
             }
 
@@ -100,7 +99,7 @@ int main(int argc, char* argv[]) {
                 while (1) {
                     waitpid(child_exec_proc, &child_proc_status, WUNTRACED);
                     if (WIFEXITED(child_proc_status) || WIFSIGNALED(child_proc_status)) {
-                        printf("\n\nCommand group done executing-----------\n\n");
+                        printf("\n\nCommand group done executing ...\n\n");
                         // remove_proc(child_exec_proc);
                         break;
                     }
@@ -114,6 +113,7 @@ int main(int argc, char* argv[]) {
 
                 // give control back to the shell process
                 tcsetpgrp(STDIN_FILENO, getpid());
+                printf("==========================================\n");
                 printf("returning controll to shell process\n");
                 printf("controlling terminal is now - %d\n", tcgetpgrp(0));
                 // reset disposition to default
