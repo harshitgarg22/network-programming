@@ -15,7 +15,8 @@ char *search_path(char *cmd) {
 
     char *token = strtok(env, ":");
     while (token) {
-        char *complete_path = malloc(sizeof(char) * (strlen(token) + MAX_CMD_LEN + 5));  // space alloted to store concatenated command name
+        // space alloted to store concatenated command name
+        char *complete_path = malloc(sizeof(char) * (strlen(token) + MAX_CMD_LEN + 5));  
         strcpy(complete_path, token);
         strcat(complete_path, "/");
         strcat(complete_path, cmd);

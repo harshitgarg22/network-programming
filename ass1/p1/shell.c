@@ -59,13 +59,13 @@ int main(int argc, char* argv[]) {
         else if (child_exec_proc == 0) {
             // inside child process
             int curr_pid = getpid();
-            printf("Starting execution of new command\n");
+            printf("Starting execution of new command group\n");
             printf("\tProcess ID : %d\n", curr_pid);
             printf("\tProcess Grp ID : %d\n", getpgid(curr_pid));
             printf("\n");
 
             ///////////////////////////////////////////////////////////////////////////
-            exec_cmd(cmd_buff);
+                                        exec_cmd(cmd_buff);
             ///////////////////////////////////////////////////////////////////////////
         }
         else {
@@ -100,13 +100,13 @@ int main(int argc, char* argv[]) {
                 while (1) {
                     waitpid(child_exec_proc, &child_proc_status, WUNTRACED);
                     if (WIFEXITED(child_proc_status) || WIFSIGNALED(child_proc_status)) {
-                        printf("\n\nProcess done executing-----------\n\n");
+                        printf("\n\nCommand group done executing-----------\n\n");
                         // remove_proc(child_exec_proc);
                         break;
                     }
                     if (WIFSTOPPED(child_proc_status)) {
                         // child process was stopped by a signal
-                        printf("\n\nProcess stopped by signal %d\n", WSTOPSIG(child_proc_status));
+                        printf("\n\nCommand group stopped by signal %d\n", WSTOPSIG(child_proc_status));
                         // set_proc_status(child_exec_proc, STOPPED);
                         break;
                     }

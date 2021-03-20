@@ -1,7 +1,6 @@
 typedef struct parsed_cmd {
     char **cmd_tokens;  // array of strings of commands (after removing pipes)
-    int num_commands;  // number of commands
-    int is_bg;  // whether the command is meant to run in background or foreground
+    int num_tokens;  // number of commands
 } PARSED_CMD;
 
 PARSED_CMD* parse_cmd(char* cmd_inp);
