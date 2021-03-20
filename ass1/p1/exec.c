@@ -9,13 +9,26 @@
 #include "exec.h"
 #include "search_path.h"
 #include "constants.h"
+#include "parse.h"
 // #include "exec_sc.h"
 
 // extern LKP_TABLE *sc_table;
 
+int count_args(char *cmd) {
+    char *cmd_dup = strdup(cmd);
+    char *token = strtok(cmd_dup, " ");
+    int num_token = 0;
+
+    while (token) {
+        num_token++;
+        token = strtok(NULL, " ");
+    }
+    free(cmd_dup);
+    return num_token;
+}
+
 int exec_single_cmd(char *cmd) {
     int num_args = count_args(cmd);
-    // printf("%d\n", num_args);
     char *dup_cmd = strdup(cmd);
 
     // vector of all arguments in the command (including command itself)
@@ -56,80 +69,37 @@ int exec_single_cmd(char *cmd) {
     return 0;
 }
 
-int count_args(char *cmd) {
-    char *cmd_dup = strdup(cmd);
-    char *token = strtok(cmd_dup, " ");
-    int num_token = 0;
+PROC_IPC *create_ipc_pipe(int read_fd, int write_fd) {
+    PROC_IPC *new_pipe = (PROC_IPC*) malloc(sizeof(PROC_IPC));
+    new_pipe->read_fd = read_fd;
+    new_pipe->write_fd = write_fd;
 
-    while (token) {
-        num_token++;
-        token = strtok(NULL, " ");
-    }
-    free(cmd_dup);
-    return num_token;
+    return new_pipe;
 }
 
-char *remove_spaces(char *filename) {
-    char *clean_name = malloc(sizeof(char) * strlen(filename));
-    int j = 0;
-    for (int i = 0; i < strlen(filename); i++) {
-        if (filename[i] != ' ') {
-            clean_name[j++] = filename[i];
-        }
-    }
-    clean_name[j] = '\0';
-    return clean_name;
-}
+int READ_EXEC_WRITE(PROC_IPC *read_from, char *single_cmd, PROC_IPC *write_to) {
+    int pid = getpid();
+    printf("Executing command < %s >\n", single_cmd);
+    printf("PID - %d\n", pid);
+    printf("PGID - %d\n", getpgid(pid));
 
-char *handle_redirection(char *cmd) {
-    char *dup_cmd = strdup(cmd);
-    char *token = strtok(dup_cmd, "<>");
-
-    if (strcmp(cmd, token) != 0) {
-        // string contains either < or > or both
-        char *file;
-        if (strstr(cmd, ">>") != NULL) {
-            file = remove_spaces(cmd + strlen(token) + 2);
-            int fd;
-            if ((fd = open(file, O_CREAT | O_WRONLY | O_APPEND, 0644)) < 0) {
-                printf("bad\n");
-                perror("Could not open file for append op\n");
-                return NULL;
-            }
-            printf("appending output of '%s' to file '%s'\n", token, file);
-            dup2(fd, 1);
-            // free(dup_cmd);
-            return token;
-        }
-        else if (strstr(cmd, ">") != NULL) {
-            file = remove_spaces(cmd + strlen(token) + 1);
-            int fd;
-            if ((fd = open(file, O_CREAT | O_TRUNC | O_WRONLY, 0644)) < 0) {
-                printf("bad\n");
-                perror("Could not open file for write op\n");
-                return NULL;
-            }
-            printf("writing output of '%s' to file '%s'\n", token, file);
-            dup2(fd, 1);
-            // free(dup_cmd);
-            return token;
-        }
-        else if (strstr(cmd, "<") != NULL) {
-            file = remove_spaces(cmd + strlen(token) + 1);
-            int fd;
-            if ((fd = open(file, O_CREAT | O_WRONLY, 0644)) < 0) {
-                printf("bad\n");
-                perror("Could not open file for read op\n");
-                return NULL;
-            }
-            printf("reading input for '%s' from file '%s'\n", token, file);
-            dup2(fd, 0);
-            // free(dup_cmd);
-            return token;
-        }
+    printf("--------------------------------\n");
+    if (read_from != NULL) {
+        printf("Reading input from fd - %d\n", read_from->read_fd);
+        close(read_from->write_fd);     // read end does not need to write anything
+        dup2(read_from->read_fd, 0);    // close stdin and copy the read_end to stdin 
     }
-    free(dup_cmd);
-    return cmd;
+    else {
+        printf("Reading from stdin\n");
+    }
+
+    if (write_to != NULL) {
+        printf("Writing output to fd - %d\n", write_to->write_fd);
+        close(write_to->read_fd);       // read end does not need to write anything
+        dup2(write_to->write_fd, 0);    // close stdin and copy the read_end to stdin         
+    }
+    char *redirected_cmd = handle_redirection(single_cmd);
+    return exec_single_cmd(redirected_cmd);
 }
 
 int exec_cmd(char *cmd) {
@@ -145,42 +115,64 @@ int exec_cmd(char *cmd) {
     }
     exit(EXIT_SUCCESS);
 
-    /*
-    int fg_process_sync[2];
-    pipe(fg_process_sync);
+    // parse the command to detect pipe operators (|,||,|||)
+    // PARSED_CMD *parsed = parse_cmd(cmd);
+    
+    // PROC_IPC *read_end = NULL;  
+    // PROC_IPC *write_end = NULL;
 
-    pid_t child_proc = fork();
-    if (child_proc < 0) {
-        fprintf(stderr, "Could not spawn new child process for single command\n");
-        exit(EXIT_FAILURE);
-    }
-    else if (child_proc == 0) {
-        // inside child process
-        char *single_cmd = strdup(cmd);
-        if (exec_single_cmd(single_cmd) == -1) {
-            fprintf(stderr, "Execution of single command '%s' failed\n", single_cmd);
-            exit(EXIT_FAILURE);
-        } else {
-            exit(EXIT_SUCCESS);
-        }
-    }
-    else {
-        int child_proc_status;
-        while (1) {
-            waitpid(child_proc, &child_proc_status, WUNTRACED);
-            if (WIFEXITED(child_proc_status) || WIFSIGNALED(child_proc_status)) {
-                printf("Process stopped unexpectedly\n");
-                // remove_proc(child_exec_proc);
-                break;
-            }
-            if (WIFSTOPPED(child_proc_status)) {
-                // child process was stopped by a signal
-                printf("Process stopped by signal %d\n", WSTOPSIG(child_proc_status));
-                // set_proc_status(child_exec_proc, STOPPED);
-                break;
-            }
-        }
-    }
-    exit(EXIT_FAILURE);
-    */
+    // int i = 0;
+    // while (i < parsed->num_tokens) {
+    //     char *command = parsed->cmd_tokens[i++];
+
+    //     if (i > 1) {
+    //         // first process does not need read end but any process after that
+    //         // will use the write_end of previous process as its own read_end
+    //         read_end = write_end;
+    //         close(read_end->write_fd);
+    //     }
+
+    //     if (i < parsed->num_tokens) {
+    //         if (strcmp(parsed->cmd_tokens[i++], "|") == 0) {
+    //             // pipe operator after current command
+    //             // this process needs to write its output to a pipe
+    //             int p[2]; 
+    //             pipe(p);
+    //             write_end = create_ipc_pipe(p[0], p[1]);
+    //         }
+    //     }
+    //     else write_end = NULL;
+
+    //     // read and write pipes for the process are defined
+    //     // start executing current sub-process
+    //     pid_t child_proc = fork();
+    //     if (child_proc < 0) {
+    //         fprintf(stderr, "Could not spawn new child process for single command\n");
+    //         exit(EXIT_FAILURE);
+    //     }
+    //     else if (child_proc == 0) {
+    //         // inside child process
+    //         if (READ_EXEC_WRITE(read_end, command, write_end) == 0) {
+    //             exit(EXIT_SUCCESS);
+    //         }
+    //     }
+    //     else {
+    //         int child_proc_status;
+    //         while (1) {
+    //             waitpid(child_proc, &child_proc_status, WUNTRACED);
+    //             if (WIFEXITED(child_proc_status) || WIFSIGNALED(child_proc_status)) {
+    //                 printf("Command done executing ...\n");
+    //                 // remove_proc(child_exec_proc);
+    //                 break;
+    //             }
+    //             if (WIFSTOPPED(child_proc_status)) {
+    //                 // child process was stopped by a signal
+    //                 printf("Command stopped by signal %d\n", WSTOPSIG(child_proc_status));
+    //                 // set_proc_status(child_exec_proc, STOPPED);
+    //                 break;
+    //             }
+    //         }
+    //     }
+    // }
+    // exit(EXIT_SUCCESS);
 }
