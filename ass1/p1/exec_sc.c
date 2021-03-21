@@ -5,37 +5,41 @@
 #include "constants.h"
 #include "exec_sc.h"
 
+extern LKP_TABLE *sc_table;
+
 LKP_TABLE *create_table() {
-    LKP_TABLE *new_table = malloc(sizeof(LKP_TABLE));
+    LKP_TABLE *new_table = (LKP_TABLE*)malloc(sizeof(LKP_TABLE));
 
     new_table->num_entries = 0;
     new_table->table = malloc(sizeof(TB_ENTRY) * MAX_LOOKUP_TABLE_SIZE);
     return new_table;
 }
 
-int insert_entry(LKP_TABLE* sc_table, int key, char* cmd) {
+int insert_entry(int key, char* cmd) {
     if (sc_table->table[key].assigned) {
-        fprintf(stderr, "A command has already been assigned to this key. Cannot overwrite.\n");
+        fprintf(stderr, "\nA command has already been assigned to this key. Cannot overwrite.\n");
         return -1;
     }
     sc_table->table[key].assigned = true;
     sc_table->table[key].key = key;
     sc_table->table[key].cmd = (char *) malloc(sizeof(char) * strlen(cmd));
     strcpy(sc_table->table[key].cmd, cmd);
-
+    printf("\nAdding entry to lookup table:\n");
+    printf("Key: %d | Command: %s\n", key, cmd);
+    printf("Done...\n");
     sc_table->num_entries++;
 
     return key;
 }
 
-int delete_entry(LKP_TABLE* sc_table, int key) {
+int delete_entry(int key) {
     if (!sc_table->table[key].assigned) {
-        fprintf(stderr, "No entry has been assigned to this key. Cannot delete non-existent entry.\n\n");
+        fprintf(stderr, "No entry has been assigned to this key. Cannot delete non-existent entry.\n");
         return -1;
     }
     sc_table->table[key].assigned = false;
     free(sc_table->table[key].cmd);
-
+    printf("\nDeleting entry for key %d from lookup table\n", key);
     sc_table->num_entries--;
     
     return key;
@@ -56,18 +60,17 @@ int exec_sc(char *cmd, LKP_TABLE *sc_table) {
         options[i] = strdup(token);
         token = strtok(NULL, " ");
     }
+    free(dup_cmd);
 
     if (strcmp(options[1], "-i") == 0) {
         // insert in lookup table
-        if (insert_entry(sc_table, atoi(options[2]), options[3]) == -1) {
-            fprintf(stderr, "Could not insert entry\n");
+        if (insert_entry(atoi(options[2]), options[3]) == -1) {
             return -1;
         }
     }
     else if (strcmp(options[1], "-d") == 0) {
         // delete from lookup table
-        if (delete_entry(sc_table, atoi(options[2])) == -1) {
-            fprintf(stderr, "Could not delete entry\n");
+        if (delete_entry(atoi(options[2])) == -1) {
             return -1;
         }
     }

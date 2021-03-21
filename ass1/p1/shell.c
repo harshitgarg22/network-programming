@@ -9,38 +9,76 @@
 #include "constants.h"
 #include "exec.h"
 #include "colors.h"
-// #include "exec_sc.h"
-// #include "process_control.h"
+#include "exec_sc.h"
+
+sig_atomic_t sc_mode = 0;
+void sc_sig_handler() {
+    sc_mode = 1;
+}
+
+LKP_TABLE *sc_table;
 
 int main(int argc, char* argv[]) {
 
     green();
     printf("\n\n============================================\n\n");
     printf("\t   << SHELL PROCESS >>\n");
-    printf("\n\t PID:%d | PGID:%d", getpid(), getpgid(getpid()));
+    printf("\n\t  PID:%d | PGID:%d", getpid(), getpgid(getpid()));
     printf("\n\n============================================\n");
     reset();
     // initalise lookup table
-    // LKP_TABLE *sc_table = create_table();
+    sc_table = create_table();
+    // insert_entry(sc_table, 2, "ls -al");
+    // insert_entry(sc_table, 3, "echo hello world");
+    // insert_entry(sc_table, 4, "cat ./constants.h");
 
+    signal(SIGINT, sc_sig_handler);
     while (true) {
         cyan();
         printf("\n[shell]-> ");   // bash style prompt
         reset();
-        char* cmd_buff = (char*)malloc(sizeof(char) * MAX_CMD_LEN);
+
+        char *cmd_buff = (char*)malloc(sizeof(char) * MAX_CMD_LEN);
         size_t cmd_len = MAX_CMD_LEN + 1;
         ssize_t cmd_inp_len = getline(&cmd_buff, &cmd_len, stdin);  // coz scanf is for noobs, you noob
-
         if (cmd_inp_len <= 0 ||  (cmd_inp_len == 1 && cmd_buff[0] == '\n')) {
             continue;
         }
         cmd_buff[cmd_inp_len-1] = 0;
+
+        if (sc_mode) {
+            cyan();
+            printf("\n--- Entered shortcut mode ---\n");
+            int key = atoi(cmd_buff);
+            if (sc_table->table[key].assigned) {
+                printf("\nThe key %d corresponds to command **%s**\n", key, sc_table->table[key].cmd);
+                printf("Executing now...\n\n");
+                strcpy(cmd_buff,sc_table->table[key].cmd);
+                sc_mode = 0;
+            }
+            else {
+                printf("\nInvalid key. Please assign a command first.\n");
+                sc_mode = 0;
+                continue;
+            }
+            reset();
+        }
+
         if (strcmp(cmd_buff, "exit") == 0) {
             green();
             printf("\nEXITING TERMINAL...\n\n");
             reset();
             free(cmd_buff);
+            free(sc_table);
             break;
+        }
+
+        char *sc_cmd = strdup(cmd_buff);
+        char *sc_tok = strtok(sc_cmd, " ");
+        if (strcmp(sc_tok, "sc") == 0) {
+            exec_sc(cmd_buff, sc_table); 
+            free(sc_cmd);  
+            continue;       
         }
 
         // check for background process
@@ -114,8 +152,8 @@ int main(int argc, char* argv[]) {
                 // give control back to the shell process
                 tcsetpgrp(STDIN_FILENO, getpid());
                 printf("==========================================\n");
-                printf("returning controll to shell process\n");
-                printf("controlling terminal is now - %d\n", tcgetpgrp(0));
+                printf("Returning controll to shell process\n");
+                printf("Controlling terminal is now - %d\n", tcgetpgrp(0));
                 // reset disposition to default
                 signal(SIGTTOU, SIG_DFL);
             }

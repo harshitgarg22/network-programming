@@ -12,9 +12,6 @@
 #include "parse.h"
 #include "io_redirection.h"
 #include "colors.h"
-// #include "exec_sc.h"
-
-// extern LKP_TABLE *sc_table;
 
 int count_args(char *cmd) {
     char *cmd_dup = strdup(cmd);
@@ -30,13 +27,12 @@ int count_args(char *cmd) {
 }
 
 int exec_single_cmd(char *cmd) {
-    int num_args = count_args(cmd);
-    char *dup_cmd = strdup(cmd);
-
     // vector of all arguments in the command (including command itself)
     // e.g. ls -a becomes ["ls", "-a"]
+    int num_args = count_args(cmd);
     char *cmd_args[num_args+1];  
 
+    char *dup_cmd = strdup(cmd);
     char *token = strtok(dup_cmd, " ");
     int i = 0;
     while (token) {
@@ -45,17 +41,6 @@ int exec_single_cmd(char *cmd) {
     }
     cmd_args[i] = NULL;  // null-terminate for iteration
     free(dup_cmd);
-
-    /////////////////////////////////////////////////////////////////////////////////
-    // if (strcmp(cmd_args[0], "sc") == 0) {
-    //     // sc command
-    //     if (exec_sc(cmd, sc_table) == -1) {
-    //         fprintf(stderr, "Could not execute sc command\n");
-    //         return -1;
-    //     }
-    //     return 0;
-    // }
-    /////////////////////////////////////////////////////////////////////////////////
 
     char *canonical_path = search_path(cmd_args[0]);
     if (canonical_path == NULL) {
@@ -81,11 +66,9 @@ PROC_IPC *create_ipc_pipe(int read_fd, int write_fd) {
 
 int READ_EXEC_WRITE(PROC_IPC *read_from, char *single_cmd, PROC_IPC *write_to) {
     int pid = getpid();
-    cyan();
     printf("\nExecuting command ** %s **\n", single_cmd);
     printf("PID - %d\n", pid);
     printf("PGID - %d\n\n", getpgid(pid));
-    reset();
 
     if (read_from != NULL) {
         printf("Reading input from fd - %d\n", read_from->read_fd);
