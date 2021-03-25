@@ -24,9 +24,11 @@ int insert_entry(int key, char* cmd) {
     sc_table->table[key].key = key;
     sc_table->table[key].cmd = (char *) malloc(sizeof(char) * strlen(cmd));
     strcpy(sc_table->table[key].cmd, cmd);
+    
     printf("\nAdding entry to lookup table:\n");
     printf("Key: %d | Command: %s\n", key, cmd);
     printf("Done...\n");
+
     sc_table->num_entries++;
 
     return key;
@@ -39,6 +41,7 @@ int delete_entry(int key) {
     }
     sc_table->table[key].assigned = false;
     free(sc_table->table[key].cmd);
+    
     printf("\nDeleting entry for key %d from lookup table\n", key);
     sc_table->num_entries--;
     

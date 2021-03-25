@@ -80,7 +80,7 @@ int READ_EXEC_WRITE(PROC_IPC *read_from, char *single_cmd, PROC_IPC *write_to) {
     if (write_to != NULL) {
         printf("Writing output to fd - %d\n", write_to->write_fd);
         close(write_to->read_fd);       // write end does not need to read anything
-        dup2(write_to->write_fd, 1);    // close stdin and copy the write_end to stdout  
+        dup2(write_to->write_fd, 1);    // close stdout and copy the write_end to stdout  
         fprintf(stderr, "STDOUT has been remapped to fd %d\n\n", write_to->write_fd);
     }
     char *redirected_cmd = handle_redirection(single_cmd);
@@ -88,27 +88,27 @@ int READ_EXEC_WRITE(PROC_IPC *read_from, char *single_cmd, PROC_IPC *write_to) {
 }
 
 int exec_cmd(char *cmd) {
-    PARSED_CMD *parsed = parse_cmd(cmd);
+    PARSED_CMD parsed = parse_single_cmd(cmd);
     
-    PROC_IPC *read_end = NULL;  
+    PROC_IPC *read_end = NULL;
     PROC_IPC *write_end = NULL;
 
     int i = 0;
-    while (i < parsed->num_tokens) {
-        char *command = parsed->cmd_tokens[i++];
+    while (i < parsed.num_tokens) {
+        char *command = parsed.cmd_tokens[i++];
 
         if (i > 1) {
-            // first process does not need read end but any process after that
-            // will use the write_end of previous process as its own read_end
+            // first process does not need a read end but any process after that
+            // will use the write_end of the previous process as its own read_end
             read_end = write_end;
             close(read_end->write_fd);
         }
 
-        if (i < parsed->num_tokens) {
-            if (strcmp(parsed->cmd_tokens[i++], "|") == 0) {
+        if (i < parsed.num_tokens) {
+            if (strcmp(parsed.cmd_tokens[i++], "|") == 0) {
                 // pipe operator after current command
                 // this process needs to write its output to a pipe
-                int p[2]; 
+                int p[2];
                 pipe(p);
                 write_end = create_ipc_pipe(p[0], p[1]);
             }
