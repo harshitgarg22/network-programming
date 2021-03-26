@@ -161,6 +161,24 @@ char* get_header_str(char* co, int size){
 }
 
 /*
+    returns the node num of the given address from the nodelist parsed from config file
+*/
+int get_node_num(struct in_addr node_addr, NODE_LIST nodelist){
+    struct in_addr cmp_addr;
+    for (int i = 0; i < nodelist.num; i++){
+        if (inet_aton(nodelist.ip[i], &cmp_addr) == 0){
+            printf ("Invalid address from node, error. Exiting.\n");
+            exit(1);
+        }
+        if (cmp_addr.s_addr == node_addr.s_addr){
+            return (i+1);
+        }
+    }
+    return -1;
+}
+
+
+/*
     Free all the strings pointed to internally by parsed commands structure
 */
 void free_parsed_commands(PARSED_COMMANDS cmds){
@@ -171,9 +189,74 @@ void free_parsed_commands(PARSED_COMMANDS cmds){
     return;
 }
 
-char* execute_on_remote_node(COMMAND cmd) {
-    printf ("\n\nfinish execute_on_remote_node\n\n");
-    return NULL;
+/*
+    execute the given command on its node and return the output
+*/
+char* execute_on_remote_node(COMMAND cmd, CONNECTED_CLIENTS clients) {
+    // find the socket for the command node
+    int i;
+    for (i = 0; i < clients.num; i++){
+        if (clients.list[i].nodenum == cmd.nodenum)
+            break;
+    }
+    int rec_fd = clients.list[i].clientfd;
+
+    // compose the command message
+    char* header_str = get_header_str("c", strlen(cmd.command));
+    char* inphdr_str;
+    if (cmd.input != NULL)
+        inphdr_str = get_header_str("i", strlen(cmd.input));
+    else 
+        inphdr_str = get_header_str("i", 0);
+    char* msg = malloc((strlen(inphdr_str) + strlen(header_str) + strlen(cmd.input) + strlen(cmd.command) + 1) * sizeof(char));
+    strcpy(msg, header_str);
+    strcat(msg, inphdr_str);
+    strcat(msg, cmd.input);
+    strcat(msg, cmd.command);
+
+    // send the command message
+    int num;
+    num = write(rec_fd, msg, strlen(msg));
+    if (num < 0){
+        perror ("write");
+        printf ("Exiting application.\n");
+        return -1;
+    }
+    if (num < strlen(msg)){
+        printf ("\nUnable to send the complete command to client. Possible network error. Exiting application.\n");
+        return -1;
+    }
+
+    // read the output header received as response
+    char* output_hdr = malloc((1 + HEADER_SIZE) * sizeof(char));
+    int bytes_read = 0;
+    while (bytes_read == 0){
+        bytes_read = read (rec_fd, output_hdr, HEADER_SIZE);
+        if (bytes_read < 0){
+            perror ("read");
+            exit(1);
+        }
+    }
+
+    // read the rest of the output received as response
+    char* output = NULL;
+    if (output_hdr[0] == 'o'){
+        // setup the receiving char array
+        output_hdr[HEADER_SIZE] = '\0';
+        int output_size = atoi(output_hdr+1);
+        output = malloc((output_size+1)*sizeof(char));
+
+        // read from socket into output array
+        bytes_read = read (rec_fd, &output, output_size);
+        output[output_size] = '\0';
+    }
+    else {
+        printf ("\nPossible application or network error detected. Exiting application.\n");
+        exit(1);
+    }
+    free (output_hdr);
+
+    return output;
 }
 
 /*
@@ -215,7 +298,7 @@ int main(int argc, char* argv[]){
             perror("accept");
             return -1;
         }
-        // TODO: fill in the name
+        clients.list[clients.num].nodenum = get_node_num(clients.list[clients.num].client_addr.sin_addr, nodelist);
         clients.num++;
     }
 
@@ -254,7 +337,7 @@ int main(int argc, char* argv[]){
             char* output = NULL;
             for (int i = 0; i < cmds.num; i++){
                 cmds.list[i].input = output;
-                output = execute_on_remote_node(cmds.list[i]); // output is the string containing the output of the command till subcommand i
+                output = execute_on_remote_node(cmds.list[i], clients); // output is the string containing the output of the command till subcommand i
             }
 
             // send the final output to the commander node socket
@@ -278,6 +361,7 @@ int main(int argc, char* argv[]){
         }
         else { // message format not followed, 'c' not found as first letter
             printf ("\nPossible application or network error detected. Exiting application.\n");
+            exit(1);
         }
 
     }
