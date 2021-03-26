@@ -21,6 +21,7 @@ Assumptions:
 3. Commands and outputs are of maximum string length 99999 include all ending characters and newlines. 
 (If output is of greater length, then it will be cutoff at that point.)
 4. Nodes are named as n1, n2, n3, ... nN.
+5. Nodes are listed in order in config file and no number is missing
 
 */
 
@@ -49,6 +50,12 @@ Assumptions:
 #define MAX_CONNECTION_REQUESTS_IN_QUEUE 10
 // size of header of messages (according to message format)
 #define HEADER_SIZE 6
+// maximum number of piped commands in a big main command sent by a node for distributed execution
+#define MAX_NUMBER_OF_PIPED_COMMANDS 10
+// path to config file
+#define CONFIG_PATH "config"
+// max size of line in config file
+#define MAX_SIZE_OF_LINE_IN_CONFIG 25
 
 ////////////////////////////////////////////
 // Data Structures
@@ -56,7 +63,7 @@ Assumptions:
 
 // Stores information about a connected client
 typedef struct connected_client_node{
-    char* name;
+    int nodenum;
     struct sockaddr_in client_addr;
     int clientfd;
 }CONNECTED_CLIENT_NODE;
@@ -67,19 +74,107 @@ typedef struct connected_clients{
     CONNECTED_CLIENT_NODE list[MAX_NUM_OF_CONNECTED_CLIENTS];
 }CONNECTED_CLIENTS;
 
+// stores information about a command
+typedef struct command{
+    int nodenum;
+    char* command;
+    char* input;
+}COMMAND;
+
+typedef struct parsed_commands{
+    int num;
+    COMMAND list[MAX_NUMBER_OF_PIPED_COMMANDS];
+}PARSED_COMMANDS;
+
+typedef struct node_list{
+    int num;
+    char* ip[MAX_NUM_OF_CONNECTED_CLIENTS];
+}NODE_LIST;
 ////////////////////////////////////////////
 // Functions
 ////////////////////////////////////////////
 
-/*
-Returns the number of lines in the config file
+/* 
+    reads config file into the node_list data structure
 */
-int num_lines_in_config(){
-    printf ("\n\nfinish num_lines_in_config\n\n");
+NODE_LIST get_nodelist_from_config(char* path){
+    FILE* config_fd = fopen (path,"r");
+    if (config_fd == NULL){
+        printf ("Error opening config file \n");
+        exit (1);
+    }
 
-    return 0;
+    NODE_LIST nodelist;
+    nodelist.num = 0;
+    char* line = NULL;
+    size_t bytes_read;
+    ssize_t n = 0;
+    while ((bytes_read = getline(&line, &n, config_fd)) != -1) {
+        if (nodelist.num == MAX_NUM_OF_CONNECTED_CLIENTS){
+            printf("config file has too many listings, please increase MAX_NUM_OF_CONNECTED_CLIENTS in clustershell_server.c. Exiting.\n");
+            exit(1);
+        }
+        if (line[bytes_read-1] == '\n')
+            line[bytes_read-1] = '\0';
+        int idx = atoi(strtok(line, " ") + 1) - 1;
+        nodelist.ip[idx] = strdup(strtok(NULL, " "));
+        nodelist.num++;
+        free(line);
+    }
+    return nodelist;
 }
 
+/*
+    Parses the command taken as string from the socket and converts it into the PARSED_COMMANDS structure
+*/
+PARSED_COMMANDS parse_command (char* command_str){
+    printf ("\n\nfinish parse_command\n\n");
+
+    PARSED_COMMANDS cmds;
+    cmds.num = 0;
+    cmds.list[0].input = NULL;
+
+    return cmds;
+}
+
+/*
+    returns the header string according to message format, given "c" or "o" and the size of the rest of message
+*/
+char* get_header_str(char* co, int size){
+    int num_length = 0;
+    int s = size;
+    while (s != 0){
+        s = s/10;
+        num_length++;
+    }
+    if (num_length > HEADER_SIZE - 1){
+        printf ("output is too long, exiting.\n");
+        exit (1);
+    }
+    char* zeroes = malloc((HEADER_SIZE - num_length)* sizeof (char));
+    for (int i = 0; i < HEADER_SIZE - num_length - 1; i++)
+        zeroes[i] = '0';
+    zeroes[HEADER_SIZE-num_length - 1] = '\0';
+    char* header_str = malloc ((num_length + 1 + 1) * sizeof (char));
+    sprintf(header_str, "%s%s%d", co, zeroes, size);
+    return header_str;
+}
+
+/*
+    Free all the strings pointed to internally by parsed commands structure
+*/
+void free_parsed_commands(PARSED_COMMANDS cmds){
+    for (int i = 0; i < cmds.num; i++){
+        free(cmds.list[i].command);
+        free(cmds.list[i].input);
+    }
+    return;
+}
+
+char* execute_on_remote_node(COMMAND cmd) {
+    printf ("\n\nfinish execute_on_remote_node\n\n");
+    return NULL;
+}
 
 /*
     Accepts new clients, parses new commands, deploys commands to the respective machines
@@ -87,18 +182,21 @@ int num_lines_in_config(){
 */
 int main(int argc, char* argv[]){
     
+    // read the config file into the nodelist structure
+    NODE_LIST nodelist = get_nodelist_from_config (CONFIG_PATH);
+
     // create the main listening socket for the server
     int serv_socket = socket(PF_INET, SOCK_STREAM, 0);
     
     // make address structure to bind the main listening server to the server port
     struct sockaddr_in serv_addr;
-    bzero(&serv_addr, size(serv_addr));
+    bzero(&serv_addr, sizeof(serv_addr));
     serv_addr.sin_family = AF_INET;
     serv_addr.sin_port = SERV_PORT;
     serv_addr.sin_addr.s_addr = htonl(INADDR_ANY);
 
     // bind the main listerning socket to the server port
-    bind(serv_socket, (struct sockaddr*)&serv_addr, size(serv_addr));
+    bind(serv_socket, (struct sockaddr*)&serv_addr, sizeof(serv_addr));
 
     // start listening at the port
     listen(serv_socket, MAX_CONNECTION_REQUESTS_IN_QUEUE);
@@ -108,11 +206,12 @@ int main(int argc, char* argv[]){
     clients.num = 0;
 
     // find total number of clients
-    int num_of_clients = num_lines_in_config();
+    int num_of_clients = nodelist.num;
 
     // accept connections from all the clients and fill details in the client list structure
     for (int i = 0; i < num_of_clients; i++) {
-        if (clients.list[clients.num].clientfd = accept(serv_socket, (struct sockaddr*)&clients.list[clients.num].client_addr, size(clients.list[clients.num].client_addr)) < 0) {
+        socklen_t sizereceived = sizeof(clients.list[clients.num].client_addr);
+        if (clients.list[clients.num].clientfd = accept(serv_socket, (struct sockaddr*)&clients.list[clients.num].client_addr, &sizereceived) < 0) {
             perror("accept");
             return -1;
         }
@@ -127,7 +226,9 @@ int main(int argc, char* argv[]){
         int commander_idx;
         for (int commander_idx = 0; commander_idx < clients.num; commander_idx++){
             int bytes_read = read (clients.list[commander_idx].clientfd, &header_buf, HEADER_SIZE);
-            if (bytes_read == 0) // client i hasn't sent anything
+            if (bytes_read < 0)
+                perror ("read");
+            else if (bytes_read == 0) // client i hasn't sent anything
                 continue;
             else if (bytes_read == HEADER_SIZE) // client i has sent a command
                 break;
@@ -147,13 +248,33 @@ int main(int argc, char* argv[]){
             command_buffer[command_size] = '\0';
 
             // parse the command
-
+            PARSED_COMMANDS cmds = parse_command(command_buffer);
             
-            // execute the command on various nodes
+            // execute the command on various nodes and get final output
+            char* output = NULL;
+            for (int i = 0; i < cmds.num; i++){
+                cmds.list[i].input = output;
+                output = execute_on_remote_node(cmds.list[i]); // output is the string containing the output of the command till subcommand i
+            }
 
-
-            // return output to the commander node socket
-
+            // send the final output to the commander node socket
+            char* header_str = get_header_str("o", strlen(output));
+            char* return_msg = malloc ((strlen(output) + strlen(header_str) + 1) * sizeof(char));
+            int bytes_sent = write (clients.list[commander_idx].clientfd, return_msg, strlen(return_msg));
+            if (bytes_sent < 0){
+                perror ("write");
+                printf ("Exiting application.\n");
+                return -1;
+            }
+            if (bytes_sent < strlen(return_msg)){
+                printf ("\nUnable to send the complete output to client. Possible network error. Exiting application.\n");
+                return -1;
+            }
+            // free memory
+            free_parsed_commands (cmds);
+            free (header_str);
+            free (output);
+            free (return_msg);
         }
         else { // message format not followed, 'c' not found as first letter
             printf ("\nPossible application or network error detected. Exiting application.\n");
@@ -161,4 +282,9 @@ int main(int argc, char* argv[]){
 
     }
     return 0;
+}
+
+// testing
+int testmain (){
+    printf ("%s", get_header_str("o", 345));
 }
