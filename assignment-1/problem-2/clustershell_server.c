@@ -220,11 +220,11 @@ char* execute_on_remote_node(COMMAND cmd, CONNECTED_CLIENTS clients) {
     if (num < 0){
         perror ("write");
         printf ("Exiting application.\n");
-        return -1;
+        exit(1);
     }
     if (num < strlen(msg)){
         printf ("\nUnable to send the complete command to client. Possible network error. Exiting application.\n");
-        return -1;
+        exit(1);
     }
 
     // read the output header received as response
@@ -303,7 +303,7 @@ int main(int argc, char* argv[]){
     }
 
     // listen for messages on each of the sockets and handle the commands received
-    while (true){
+    for(;;){
         // step 1: iterate over each of the sockets to check if we have any command
         char header_buf[HEADER_SIZE + 1];
         int commander_idx;
