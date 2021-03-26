@@ -35,6 +35,7 @@ Assumptions:
 #include <string.h>
 #include <stdbool.h>
 #include <unistd.h>
+#include <string.h>
 
 ////////////////////////////////////////////
 // Constants
@@ -122,9 +123,10 @@ int main(int argc, char* argv[]){
     // listen for messages on each of the sockets and handle the commands received
     while (true){
         // step 1: iterate over each of the sockets to check if we have any command
-        char header_buf[HEADER_SIZE];
-        for (int i = 0; i < clients.num; i++){
-            int bytes_read = read (clients.list[i].clientfd, &header_buf, size(header_buf));
+        char header_buf[HEADER_SIZE + 1];
+        int commander_idx;
+        for (int commander_idx = 0; commander_idx < clients.num; commander_idx++){
+            int bytes_read = read (clients.list[commander_idx].clientfd, &header_buf, HEADER_SIZE);
             if (bytes_read == 0) // client i hasn't sent anything
                 continue;
             else if (bytes_read == HEADER_SIZE) // client i has sent a command
@@ -136,7 +138,22 @@ int main(int argc, char* argv[]){
         }
         // step 2: handle the command
         if (header_buf[0] == 'c'){ // command received, according to message format
+            header_buf[HEADER_SIZE] = '\0'; // convert header to string
+            int command_size = atoi(header_buf+1); //get the size of the message (command) as int
+
+            // read the command as string into command_buffer from the commander node socket
+            char command_buffer[command_size+1]; 
+            int bytes_read = read (clients.list[commander_idx].clientfd, &header_buf, command_size);
+            command_buffer[command_size] = '\0';
+
+            // parse the command
+
             
+            // execute the command on various nodes
+
+
+            // return output to the commander node socket
+
         }
         else { // message format not followed, 'c' not found as first letter
             printf ("\nPossible application or network error detected. Exiting application.\n");
