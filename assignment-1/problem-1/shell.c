@@ -66,7 +66,7 @@ int main(int argc, char* argv[]) {
 
         if (strcmp(cmd_buff, "exit") == 0) {
             green();
-            printf("\nEXITING TERMINAL...\n\n");
+            printf("\nEXITING SHELL...\n\n");
             reset();
             free(cmd_buff);
             free(sc_table);
@@ -115,13 +115,13 @@ int main(int argc, char* argv[]) {
             if (!is_bg_process) {
                 // set disposition of SIGTTOU to ignore so that parent can still print output to terminal
                 signal(SIGTTOU, SIG_IGN);
-                //set the child pid as the foreground process group id and the controlling terminal
+                //set the child pid as the foreground process group on the controlling terminal
                 if (tcsetpgrp(STDIN_FILENO, child_exec_proc) == -1) {
                     fprintf(stderr, "Unable to bring process grp to foreground. Exiting...\n\n");
                     exit(0);
                 }
                 else {
-                    printf("Controlling terminal is now %d\n", tcgetpgrp(0));
+                    printf("Foreground process grp is now %d\n", tcgetpgrp(0));
                 }
             }
 
@@ -153,7 +153,7 @@ int main(int argc, char* argv[]) {
                 tcsetpgrp(STDIN_FILENO, getpid());
                 printf("==========================================\n");
                 printf("Returning controll to shell process\n");
-                printf("Controlling terminal is now - %d\n", tcgetpgrp(0));
+                printf("Foreground process grp is now - %d\n", tcgetpgrp(0));
                 // reset disposition to default
                 signal(SIGTTOU, SIG_DFL);
             }
