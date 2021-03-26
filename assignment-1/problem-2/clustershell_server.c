@@ -37,6 +37,7 @@ Assumptions:
 #include <stdbool.h>
 #include <unistd.h>
 #include <string.h>
+#include <ctype.h>
 
 ////////////////////////////////////////////
 // Constants
@@ -81,15 +82,18 @@ typedef struct command{
     char* input;
 }COMMAND;
 
+// stores the parsed form of commands from a remote node
 typedef struct parsed_commands{
     int num;
     COMMAND list[MAX_NUMBER_OF_PIPED_COMMANDS];
 }PARSED_COMMANDS;
 
+// stores the parsed form of the config file
 typedef struct node_list{
     int num;
     char* ip[MAX_NUM_OF_CONNECTED_CLIENTS];
 }NODE_LIST;
+
 ////////////////////////////////////////////
 // Functions
 ////////////////////////////////////////////
@@ -127,13 +131,71 @@ NODE_LIST get_nodelist_from_config(char* path){
 /*
     Parses the command taken as string from the socket and converts it into the PARSED_COMMANDS structure
 */
-PARSED_COMMANDS parse_command (char* command_str){
-    printf ("\n\nfinish parse_command\n\n");
+PARSED_COMMANDS parse_command (char* command, int commander_nodenum){
+    // move pointers and \0 around to trim trailing and leading white spaces
+    char* command_s;
+    char* command_str = command_s = strdup(command);
+    while (*command_str == ' ')
+        command_str++;
+    int command_length = strlen (command_str);
+    while (command_str[command_length-1] == ' ')
+        command_length--;
+    command_str[command_length] = '\0';
 
+    // initiate the cmds structure
     PARSED_COMMANDS cmds;
     cmds.num = 0;
     cmds.list[0].input = NULL;
 
+    // process the command one by one after tokenising it on '|'
+    int i = 0;
+    char* token = strtok (command_str, "|");
+    while (token != NULL){
+        // trim leading white space
+        while (*token == ' ' || *token == '\t' || *token == '\n')
+            token++;
+        
+        if (token[0] == 'n'){ // "n[something]" case (node is mentioned)
+            if (token [1] == '*' && token [2] == '.'){ // "n*." case
+                cmds.list[i].nodenum = 0;
+                cmds.list[i].command = strdup(token+3);
+                cmds.list[i].input = NULL;
+                
+                cmds.num++;
+                i++;
+                token = strtok (NULL, "|");
+                continue;
+            }
+            else if (isdigit(token[1])){ // "n[number]." case
+                int j = 2;
+                while (isdigit(token[j]))
+                    j++;
+                if (token[j] == '.'){
+                    token[j] = '\0';
+                    cmds.list[i].nodenum = atoi(token + 1);
+                    cmds.list[i].command = strdup(token + j + 1);
+                    cmds.list[i].input = NULL;
+                    token[j] = '.';
+                    
+                    cmds.num++;
+                    i++;
+                    token = strtok (NULL, "|");
+                    continue;
+                }
+            }
+        }
+        // no node mentioned, so codecum should be the commanding node itself
+        cmds.list[i].nodenum = commander_nodenum;
+        cmds.list[i].command = strdup(token);
+        cmds.list[i].input = NULL;
+    
+        cmds.num++;
+        i++;
+        token = strtok (NULL, "|");
+    }
+
+    // we created duplicate string, so free the memory
+    free(command_s);
     return cmds;
 }
 
@@ -176,7 +238,6 @@ int get_node_num(struct in_addr node_addr, NODE_LIST nodelist){
     }
     return -1;
 }
-
 
 /*
     Free all the strings pointed to internally by parsed commands structure
@@ -331,7 +392,7 @@ int main(int argc, char* argv[]){
             command_buffer[command_size] = '\0';
 
             // parse the command
-            PARSED_COMMANDS cmds = parse_command(command_buffer);
+            PARSED_COMMANDS cmds = parse_command(command_buffer, clients.list[commander_idx].nodenum);
             
             // execute the command on various nodes and get final output
             char* output = NULL;
