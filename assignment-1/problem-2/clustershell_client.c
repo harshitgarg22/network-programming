@@ -88,6 +88,14 @@ void reset () {
 }
 
 /*
+    TODO: execute the given command with the given input on the current node and return the output
+*/
+char* execute_on_current_node(char* input, char* command){
+    
+    return NULL;
+}
+
+/*
     returns the header string according to message format, given "c" or "o" and the size of the rest of message
 */
 char* get_header_str(char* co, int size){
@@ -264,6 +272,7 @@ void request_handler(){
 
         // execute command on this machine, with the given input and get the output
         char* output = NULL;
+        output = execute_on_current_node(inp, cmd);
 
         // send output to the server
         char* output_hdr = get_header_str("o", strlen(output));
