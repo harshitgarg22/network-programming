@@ -11,7 +11,7 @@ To server: [c/o][mlength][command/output string]
 To client: [c/o][mlength][(if c) i][(if c)ilength][input string][command/output string]
 c - command
 o - output
-mlength - 5 digit number signifying length of rest of message
+mlength - 5 digit number signifying length of command/output string
 (only if command to client) i - input 
 (only if command to client) ilength - 5 digit number, length of input string
 
@@ -360,7 +360,7 @@ int main(int argc, char* argv[]){
     // find total number of clients
     int num_of_clients = nodelist.num;
 
-    // accept connections from (TODO: shell processes of )all the clients and fill details in the client list structure
+    // accept connections from shell processes of all the clients and fill details in the client list structure
     for (int i = 0; i < num_of_clients; i++) {
         socklen_t sizereceived = sizeof(clients.list[clients.num].client_addr);
         if (clients.list[clients.num].clientfd = accept(serv_socket, (struct sockaddr*)&clients.list[clients.num].client_addr, &sizereceived) < 0) {
@@ -376,6 +376,7 @@ int main(int argc, char* argv[]){
         // step 1: iterate over each of the sockets to check if we have any command
         char header_buf[HEADER_SIZE + 1];
         int commander_idx;
+        // TODO: change this to select()
         for (int commander_idx = 0; commander_idx < clients.num; commander_idx++){
             int bytes_read = read (clients.list[commander_idx].clientfd, &header_buf, HEADER_SIZE);
             if (bytes_read < 0)
