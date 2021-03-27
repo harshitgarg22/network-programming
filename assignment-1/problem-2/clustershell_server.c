@@ -13,7 +13,7 @@ c - command
 o - output
 mlength - 5 digit number signifying length of rest of message
 (only if command to client) i - input 
-(only if command to client) ilength - 3 digit number, length of input string
+(only if command to client) ilength - 5 digit number, length of input string
 
 Assumptions:
 1. All clients listed in the config file connect in the beginning itself and none of them leave before all commands are over
@@ -330,7 +330,7 @@ int main(int argc, char* argv[]){
     NODE_LIST nodelist = get_nodelist_from_config (CONFIG_PATH);
 
     // create the main listening socket for the server
-    int serv_socket = socket(PF_INET, SOCK_STREAM, 0);
+    int serv_socket = socket(PF_INET, SOCK_STREAM, IPPROTO_TCP);
     
     // make address structure to bind the main listening server to the server port
     struct sockaddr_in serv_addr;
