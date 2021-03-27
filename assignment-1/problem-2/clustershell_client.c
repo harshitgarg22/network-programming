@@ -152,7 +152,7 @@ void shell_handler(int serv_fd){
         char* output_hdr = malloc((1 + HEADER_SIZE) * sizeof(char));
         int bytes_read = 0;
         while (bytes_read = 0){
-            bytes_read = read (rec_fd, output_hdr, HEADER_SIZE);
+            bytes_read = read (serv_fd, output_hdr, HEADER_SIZE);
             if (bytes_read < 0){
                 perror ("read");
                 exit(1);
@@ -168,7 +168,7 @@ void shell_handler(int serv_fd){
             output = malloc((output_size+1)*sizeof(char));
 
             // read from socket into output array
-            bytes_read = read (rec_fd, &output, output_size);
+            bytes_read = read (serv_fd, &output, output_size);
             output[output_size] = '\0';
         }
         else {
@@ -190,8 +190,11 @@ void shell_handler(int serv_fd){
     The child process calls this function to handle all incoming command requests
 */
 void request_handler(int serv_fd){
-    
+    // bind a socket to listen and accept connections on it
+
+    // handle accepted connections
 }
+
 
 /*
     Connects to server and creates the child process to handle incoming commands, while parent handles the shell
@@ -215,7 +218,7 @@ int main (int argc, char* argv[]) {
         exit(1);
     }
 
-    // create a process for listening for commands from server, while parent process handles the shell
+    // create a process for listening to commands from server, while parent process handles the shell
     int child_pid = fork();
     if (child_pid == 0){ // child process: handles incoming commands from server
         request_handler(serv_socket);

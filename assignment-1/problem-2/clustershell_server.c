@@ -57,6 +57,9 @@ Assumptions:
 #define CONFIG_PATH "config"
 // max size of line in config file
 #define MAX_SIZE_OF_LINE_IN_CONFIG 25
+// the port on which client runs its executioner process
+#define CLIEX_PORT 12345
+
 
 ////////////////////////////////////////////
 // Data Structures
@@ -254,13 +257,20 @@ void free_parsed_commands(PARSED_COMMANDS cmds){
     execute the given command on its node and return the output
 */
 char* execute_on_remote_node(COMMAND cmd, CONNECTED_CLIENTS clients) {
-    // find the socket for the command node
+    // find the client address for the command node, change the port, and make a connection to the client executioner
     int i;
     for (i = 0; i < clients.num; i++){
         if (clients.list[i].nodenum == cmd.nodenum)
             break;
     }
-    int rec_fd = clients.list[i].clientfd;
+    struct sockaddr_in cliex_addr = clients.list[i].client_addr;
+    cliex_addr.sin_port = CLIEX_PORT;
+    int cliex_fd = socket(PF_INET, SOCK_STREAM, IPPROTO_TCP);
+    if (connect(cliex_fd, (struct sockaddr*)&cliex_addr, sizeof(cliex_addr)) == -1){
+        printf("Couldn't connect to client executioner. Exiting application.\n");
+        perror("connect");
+        exit(1);
+    }
 
     // compose the command message
     char* header_str = get_header_str("c", strlen(cmd.command));
@@ -277,7 +287,7 @@ char* execute_on_remote_node(COMMAND cmd, CONNECTED_CLIENTS clients) {
 
     // send the command message
     int num;
-    num = write(rec_fd, msg, strlen(msg));
+    num = write(cliex_fd, msg, strlen(msg));
     if (num < 0){
         perror ("write");
         printf ("Exiting application.\n");
@@ -291,12 +301,10 @@ char* execute_on_remote_node(COMMAND cmd, CONNECTED_CLIENTS clients) {
     // read the output header received as response
     char* output_hdr = malloc((1 + HEADER_SIZE) * sizeof(char));
     int bytes_read = 0;
-    while (bytes_read == 0){
-        bytes_read = read (rec_fd, output_hdr, HEADER_SIZE);
-        if (bytes_read < 0){
-            perror ("read");
-            exit(1);
-        }
+    bytes_read = read (cliex_fd, output_hdr, HEADER_SIZE);
+    if (bytes_read < 0){
+        perror ("read");
+        exit(1);
     }
 
     // read the rest of the output received as response
@@ -308,7 +316,7 @@ char* execute_on_remote_node(COMMAND cmd, CONNECTED_CLIENTS clients) {
         output = malloc((output_size+1)*sizeof(char));
 
         // read from socket into output array
-        bytes_read = read (rec_fd, &output, output_size);
+        bytes_read = read (cliex_fd, &output, output_size);
         output[output_size] = '\0';
     }
     else {
@@ -316,7 +324,7 @@ char* execute_on_remote_node(COMMAND cmd, CONNECTED_CLIENTS clients) {
         exit(1);
     }
     free (output_hdr);
-
+    close (cliex_fd);
     return output;
 }
 
@@ -352,7 +360,7 @@ int main(int argc, char* argv[]){
     // find total number of clients
     int num_of_clients = nodelist.num;
 
-    // accept connections from all the clients and fill details in the client list structure
+    // accept connections from (TODO: shell processes of )all the clients and fill details in the client list structure
     for (int i = 0; i < num_of_clients; i++) {
         socklen_t sizereceived = sizeof(clients.list[clients.num].client_addr);
         if (clients.list[clients.num].clientfd = accept(serv_socket, (struct sockaddr*)&clients.list[clients.num].client_addr, &sizereceived) < 0) {
