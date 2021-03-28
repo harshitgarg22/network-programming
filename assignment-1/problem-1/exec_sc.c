@@ -52,30 +52,21 @@ int exec_sc(char *cmd, LKP_TABLE *sc_table) {
     char *dup_cmd = strdup(cmd);
     char *token = strtok(dup_cmd, " ");
 
-    // very pretty hard-coded stuff; very bad;
-    char *options[4];    // 3 options in sc command - i/d, index, cmd
-    for (int i = 0; i < 4; i++) {
-        if (i == 3) {
-            // command string
-            options[i] = strdup(cmd+8);
-            break;
-        }
+    char *options[4];    // 4 args in sc command - sc, i/d, index, cmd
+    char *pointer = cmd;
+    for (int i = 0; i < 3; i++) {
         options[i] = strdup(token);
+        pointer += strlen(token) + 1;
         token = strtok(NULL, " ");
     }
+    options[3] = strdup(pointer);
     free(dup_cmd);
 
     if (strcmp(options[1], "-i") == 0) {
-        // insert in lookup table
-        if (insert_entry(atoi(options[2]), options[3]) == -1) {
-            return -1;
-        }
+        return insert_entry(atoi(options[2]), options[3]);
     }
     else if (strcmp(options[1], "-d") == 0) {
-        // delete from lookup table
-        if (delete_entry(atoi(options[2])) == -1) {
-            return -1;
-        }
+        return delete_entry(atoi(options[2]));
     }
-    return atoi(options[2]);
+    return -1;
 }

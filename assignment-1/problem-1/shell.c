@@ -86,7 +86,6 @@ int main(int argc, char* argv[]) {
         bool is_bg_process = false;
         if (cmd_buff[cmd_inp_len-2] == '&') {
             is_bg_process = true;
-            cmd_buff[cmd_inp_len-2] = 0;
         }
 
         // create child process start execution of command in new process group
@@ -141,17 +140,19 @@ int main(int argc, char* argv[]) {
                 int child_proc_status;
                 if (!is_bg_process) {
                     // wait for the process to either finish execution or terminate
-                    waitpid(child_exec_proc, &child_proc_status, WUNTRACED);
-                    if (WIFEXITED(child_proc_status) || WIFSIGNALED(child_proc_status)) {
-                        printf("\n\nCommand group done executing ...\n\n");
-                        // remove_proc(child_exec_proc);
-                        break;
-                    }
-                    if (WIFSTOPPED(child_proc_status)) {
-                        // child process was stopped by a signal
-                        printf("\n\nCommand group stopped by signal %d\n", WSTOPSIG(child_proc_status));
-                        // set_proc_status(child_exec_proc, STOPPED);
-                        break;
+                    while (1) {
+                        waitpid(child_exec_proc, &child_proc_status, WUNTRACED);
+                        if (WIFEXITED(child_proc_status) || WIFSIGNALED(child_proc_status)) {
+                            printf("\n\nCommand group done executing ...\n\n");
+                            // remove_proc(child_exec_proc);
+                            break;
+                        }
+                        if (WIFSTOPPED(child_proc_status)) {
+                            // child process was stopped by a signal
+                            printf("\n\nCommand group stopped by signal %d\n", WSTOPSIG(child_proc_status));
+                            // set_proc_status(child_exec_proc, STOPPED);
+                            break;
+                        }
                     }
 
                     // give control back to the shell process
