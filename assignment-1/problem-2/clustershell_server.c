@@ -391,25 +391,39 @@ int main(int argc, char* argv[]){
 
     // listen for messages on each of the sockets and handle the commands received
     for(;;){
-        // step 1: iterate over each of the sockets to check if we have any command
-        char header_buf[HEADER_SIZE + 1];
-        int commander_idx;
-        // TODO: change this to select()
-        for (commander_idx = 0; commander_idx < clients.num; commander_idx++){
-            printf ("Checking read on  %s on socket number %d \n", inet_ntoa(clients.list[commander_idx].client_addr.sin_addr), clients.list[commander_idx].clientfd);
-            int bytes_read = read (clients.list[commander_idx].clientfd, header_buf, HEADER_SIZE);
-            printf ("header read, header[0]: %c\n", header_buf[0]);
-            if (bytes_read < 0)
-                perror ("read");
-            else if (bytes_read == 0) // client i hasn't sent anything
-                continue;
-            else if (bytes_read == HEADER_SIZE) // client i has sent a command
-                break;
-            else { // bytes read is less than the minimum for any message (bytes in the header), probable cause network is network error
-                printf ("\nPossible network error encountered. Exiting application.\n");
-                return 0;
-            }
+        
+
+        // step 1: find the socket on which we have something to read (i.e. a command)
+        fd_set rfds;
+        FD_ZERO(&rfds);
+        int max_fd = 0;
+        // add the fds to the fd set rfds
+        for (int i = 0; i < clients.num; i++){
+            FD_SET(clients.list[i].clientfd, &rfds);
+            if (clients.list[i].clientfd > max_fd)
+                max_fd = clients.list[i].clientfd;
         }
+        int retval = select(max_fd + 1, &rfds, NULL, NULL, NULL);
+        if (retval == -1){
+            perror("select()");
+            exit(1);
+        }
+        char header_buf[HEADER_SIZE + 1];
+        int commander_idx = 0;
+        for (commander_idx = 0; commander_idx < clients.num; commander_idx++){
+            if (FD_ISSET(clients.list[commander_idx].clientfd, &rfds))
+                break;
+        }
+        printf ("Found available read on %s on socket number %d \n", inet_ntoa(clients.list[commander_idx].client_addr.sin_addr), clients.list[commander_idx].clientfd);
+        int bytes_read = read (clients.list[commander_idx].clientfd, header_buf, HEADER_SIZE);
+        printf ("header read, header[0]: %c\n", header_buf[0]);
+        if (bytes_read < 0)
+            perror ("read");
+        if (bytes_read < HEADER_SIZE){ // bytes read is less than the minimum for any message (bytes in the header), probable cause network is network error
+            printf ("\nPossible network error encountered. Exiting application.\n");
+            return 0;
+        }
+
         header_buf[HEADER_SIZE] = '\0'; // convert header to string
         printf ("command_idx: %d\n", commander_idx);
         printf ("command header read, header: %s\n", header_buf);
