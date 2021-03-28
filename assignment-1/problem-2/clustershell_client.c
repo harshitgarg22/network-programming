@@ -212,7 +212,7 @@ void shell_handler(int serv_fd){
             exit(1);
         }
 
-        printf ("Command sent to server. Processing....\n");
+        printf ("Command sent to server: %s. Waiting for response....\n", msg);
 
         // read the output header received as response
         char* output_hdr = malloc((1 + HEADER_SIZE) * sizeof(char));

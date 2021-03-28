@@ -316,7 +316,7 @@ char* execute_on_remote_node(COMMAND cmd, CONNECTED_CLIENTS clients) {
         output = malloc((output_size+1)*sizeof(char));
 
         // read from socket into output array
-        bytes_read = read (cliex_fd, &output, output_size);
+        bytes_read = read (cliex_fd, output, output_size);
         output[output_size] = '\0';
     }
     else {
@@ -359,15 +359,17 @@ int main(int argc, char* argv[]){
 
     // find total number of clients
     int num_of_clients = nodelist.num;
-
+    printf ("num_of_clients: %d\n", num_of_clients);
     // accept connections from shell processes of all the clients and fill details in the client list structure
     for (int i = 0; i < num_of_clients; i++) {
         socklen_t sizereceived = sizeof(clients.list[clients.num].client_addr);
-        if (clients.list[clients.num].clientfd = accept(serv_socket, (struct sockaddr*)&clients.list[clients.num].client_addr, &sizereceived) < 0) {
+        if ((clients.list[clients.num].clientfd = accept(serv_socket, (struct sockaddr*)&clients.list[clients.num].client_addr, &sizereceived)) < 0 ) {
             perror("accept");
-            return -1;
+            exit(1);
         }
+        printf ("Accepted connection from %s on socket number %d \n", inet_ntoa(clients.list[clients.num].client_addr.sin_addr), clients.list[clients.num].clientfd);
         clients.list[clients.num].nodenum = get_node_num(clients.list[clients.num].client_addr.sin_addr, nodelist);
+        printf ("corresponding nodenum: %d\n", clients.list[clients.num].nodenum);
         clients.num++;
     }
 
@@ -377,8 +379,10 @@ int main(int argc, char* argv[]){
         char header_buf[HEADER_SIZE + 1];
         int commander_idx;
         // TODO: change this to select()
-        for (int commander_idx = 0; commander_idx < clients.num; commander_idx++){
-            int bytes_read = read (clients.list[commander_idx].clientfd, &header_buf, HEADER_SIZE);
+        for (commander_idx = 0; commander_idx < clients.num; commander_idx++){
+            printf ("Checking read on  %s on socket number %d \n", inet_ntoa(clients.list[commander_idx].client_addr.sin_addr), clients.list[commander_idx].clientfd);
+            int bytes_read = read (clients.list[commander_idx].clientfd, header_buf, HEADER_SIZE);
+            printf ("header read, header[0]: %c\n", header_buf[0]);
             if (bytes_read < 0)
                 perror ("read");
             else if (bytes_read == 0) // client i hasn't sent anything
@@ -390,19 +394,25 @@ int main(int argc, char* argv[]){
                 return 0;
             }
         }
+        header_buf[HEADER_SIZE] = '\0'; // convert header to string
+        printf ("command_idx: %d\n", commander_idx);
+        printf ("command header read, header: %s\n", header_buf);
+        printf ("address validation: %s\n", inet_ntoa(clients.list[commander_idx].client_addr.sin_addr));
         // step 2: handle the command
         if (header_buf[0] == 'c'){ // command received, according to message format
-            header_buf[HEADER_SIZE] = '\0'; // convert header to string
+            
             int command_size = atoi(header_buf+1); //get the size of the message (command) as int
-
+            printf ("command size read: %d\n", command_size);
             // read the command as string into command_buffer from the commander node socket
             char command_buffer[command_size+1]; 
-            int bytes_read = read (clients.list[commander_idx].clientfd, &header_buf, command_size);
+            int bytes_read = read (clients.list[commander_idx].clientfd, command_buffer, command_size);
             command_buffer[command_size] = '\0';
+            
+            printf ("command read: %s\n", command_buffer);
 
             // parse the command
             PARSED_COMMANDS cmds = parse_command(command_buffer, clients.list[commander_idx].nodenum);
-            
+            printf("here\n");
             // execute the command on various nodes and get final output
             char* output = NULL;
             for (int i = 0; i < cmds.num; i++){
@@ -410,6 +420,7 @@ int main(int argc, char* argv[]){
                 output = execute_on_remote_node(cmds.list[i], clients); // output is the string containing the output of the command till subcommand i
             }
 
+            
             // send the final output to the commander node socket
             char* header_str = get_header_str("o", strlen(output));
             char* return_msg = malloc ((strlen(output) + strlen(header_str) + 1) * sizeof(char));
