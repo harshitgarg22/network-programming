@@ -260,7 +260,22 @@ void free_parsed_commands(PARSED_COMMANDS cmds){
     TODO: Add support for n*
 */
 char* execute_on_remote_node(COMMAND cmd, CONNECTED_CLIENTS clients) {
+    // if the command of the n* kind, call execute_on_remote_node with modified command for all the clients and return the concatenated output
+    if (cmd.nodenum == 0){
+        char* output = malloc(sizeof(char));
+        strcpy(output, "\0");
+        for (int i = 0; i < clients.num; i++){
+            cmd.nodenum = i+1;
+            char* temp_output = execute_on_remote_node(cmd, clients);
+            output = realloc (output, (strlen(output) + strlen(temp_output) + 1) * sizeof(char));
+            strcat (output, temp_output);
+        }
+        cmd.nodenum = 0;
+        return output;
+    }
+    
     // find the client address for the command node, change the port, and make a connection to the client executioner
+
     int i;
     for (i = 0; i < clients.num; i++){
         if (clients.list[i].nodenum == cmd.nodenum)
@@ -455,8 +470,7 @@ int main(int argc, char* argv[]){
                     sprintf(output + curr_size, "n%d %s\n", i+1, nodelist.ip[i]);
                 }
             }
-            else {
-            // execute the command on various nodes and get final output
+            else { // execute the command on various nodes and get final output
                 printf ("cmds.num: %d\n", cmds.num);
                 for (int i = 0; i < cmds.num; i++){
                     cmds.list[i].input = output;
