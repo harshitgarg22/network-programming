@@ -102,7 +102,17 @@ void sigusr1_handler(int signum){
 char* execute_on_current_node(char* input, char* command){
     char* output = NULL;
     printf("received command: %s, input: %s\n", command, input);
-    // TODO: account for cd command
+    
+    // handling cd command
+    if (command[0] == 'c' && command[1] == 'd' && command[2] == ' '){
+        if (chdir (command + 3) < 0){
+            perror("chdir");
+            printf("Couldn't change directory.\n");
+        }
+        output = malloc(sizeof(char));
+        strcpy(output, "\0");
+        return output;
+    }
 
     // use a pipe to send command input to the process that executes the command as stdin
     int p[2];
@@ -150,6 +160,8 @@ char* get_header_str(char* co, int size){
         s = s/10;
         num_length++;
     }
+    if (size == 0)
+        num_length = 1;
     if (num_length > HEADER_SIZE - 1){
         printf ("output is too long, exiting.\n");
         if (getpid() == child_pid)

@@ -319,6 +319,7 @@ char* execute_on_remote_node(COMMAND cmd, CONNECTED_CLIENTS clients) {
         perror ("read");
         exit(1);
     }
+    printf("output header: %s\n", output_hdr);
     printf("here6\n");
     // read the rest of the output received as response
     char* output = NULL;
