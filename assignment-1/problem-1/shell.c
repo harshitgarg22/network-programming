@@ -7,6 +7,7 @@
 #include <string.h>
 
 #include "constants.h"
+#include "parse.h"
 #include "exec.h"
 #include "colors.h"
 #include "exec_sc.h"
@@ -88,77 +89,82 @@ int main(int argc, char* argv[]) {
         }
 
         // create child process start execution of command in new process group
-        pid_t child_exec_proc = fork();
+        PARSED_CMD parsed_grp = parse_cmd(cmd_buff);
+        for (int i = 0; i < parsed_grp.pipe_type; i++) {
+            char *single_cmd = strdup(parsed_grp.cmds[i]);
+            // printf("%s\n", single_cmd);
 
-        if (child_exec_proc < 0) {
-            fprintf(stderr, "Error spawning new process group for this command. Exiting...\n\n");
-            exit(1);
-        }
-        else if (child_exec_proc == 0) {
-            // inside child process
-            int curr_pid = getpid();
-            printf("Starting execution of new command group\n");
-            printf("\tProcess Grp ID : %d\n", getpgid(curr_pid));
-            printf("==========================================\n");
+            pid_t child_exec_proc = fork();
 
-            ///////////////////////////////////////////////////////////////////////////
-                                        exec_cmd(cmd_buff);
-            ///////////////////////////////////////////////////////////////////////////
-        }
-        else {
-            // set process group id to curr_pid
-            if (setpgid(child_exec_proc, child_exec_proc) == -1) {
-                fprintf(stderr, "Could not set current process group for foreground execution\n");
-                exit(0);
+            if (child_exec_proc < 0) {
+                fprintf(stderr, "Error spawning new process group for this command. Exiting...\n\n");
+                exit(1);
             }
+            else if (child_exec_proc == 0) {
+                // inside child process
+                int curr_pid = getpid();
+                printf("Starting execution of new command group\n");
+                printf("\tProcess Grp ID : %d\n", getpgid(curr_pid));
+                printf("==========================================\n");
 
-            if (!is_bg_process) {
-                // set disposition of SIGTTOU to ignore so that parent can still print output to terminal
-                signal(SIGTTOU, SIG_IGN);
-                //set the child pid as the foreground process group on the controlling terminal
-                if (tcsetpgrp(STDIN_FILENO, child_exec_proc) == -1) {
-                    fprintf(stderr, "Unable to bring process grp to foreground. Exiting...\n\n");
+                ///////////////////////////////////////////////////////////////////////////
+                                            exec_cmd(single_cmd);
+                ///////////////////////////////////////////////////////////////////////////
+            }
+            else {
+                // set process group id to curr_pid
+                if (setpgid(child_exec_proc, child_exec_proc) == -1) {
+                    fprintf(stderr, "Could not set current process group for foreground execution\n");
                     exit(0);
                 }
-                else {
-                    printf("Foreground process grp is now %d\n", tcgetpgrp(0));
-                }
-            }
 
-            // command *cmd = malloc(sizeof(command));
-            // cmd->cmd = cmd_buff;
-            // cmd->is_bg = is_bg_process;
-            // cmd->pgid = child_exec_proc;
-
-            // add_proc(cmd);
-            int child_proc_status;
-            if (!is_bg_process) {
-                // wait for the process to either finish execution or terminate
-                while (1) {
-                    waitpid(child_exec_proc, &child_proc_status, WUNTRACED);
-                    if (WIFEXITED(child_proc_status) || WIFSIGNALED(child_proc_status)) {
-                        printf("\n\nCommand group done executing ...\n\n");
-                        // remove_proc(child_exec_proc);
-                        break;
+                if (!is_bg_process) {
+                    // set disposition of SIGTTOU to ignore so that parent can still print output to terminal
+                    signal(SIGTTOU, SIG_IGN);
+                    //set the child pid as the foreground process group on the controlling terminal
+                    if (tcsetpgrp(STDIN_FILENO, child_exec_proc) == -1) {
+                        fprintf(stderr, "Unable to bring process grp to foreground. Exiting...\n\n");
+                        exit(0);
                     }
-                    if (WIFSTOPPED(child_proc_status)) {
-                        // child process was stopped by a signal
-                        printf("\n\nCommand group stopped by signal %d\n", WSTOPSIG(child_proc_status));
-                        // set_proc_status(child_exec_proc, STOPPED);
-                        break;
+                    else {
+                        printf("\nForeground process grp is now %d\n", tcgetpgrp(0));
                     }
                 }
 
-                // give control back to the shell process
-                tcsetpgrp(STDIN_FILENO, getpid());
-                printf("==========================================\n");
-                printf("Returning controll to shell process\n");
-                printf("Foreground process grp is now - %d\n", tcgetpgrp(0));
-                // reset disposition to default
-                signal(SIGTTOU, SIG_DFL);
+                // command *cmd = malloc(sizeof(command));
+                // cmd->cmd = cmd_buff;
+                // cmd->is_bg = is_bg_process;
+                // cmd->pgid = child_exec_proc;
+
+                // add_proc(cmd);
+                int child_proc_status;
+                if (!is_bg_process) {
+                    // wait for the process to either finish execution or terminate
+                    while (1) {
+                        waitpid(child_exec_proc, &child_proc_status, WUNTRACED);
+                        if (WIFEXITED(child_proc_status) || WIFSIGNALED(child_proc_status)) {
+                            printf("\n\nCommand group done executing ...\n\n");
+                            // remove_proc(child_exec_proc);
+                            break;
+                        }
+                        if (WIFSTOPPED(child_proc_status)) {
+                            // child process was stopped by a signal
+                            printf("\n\nCommand group stopped by signal %d\n", WSTOPSIG(child_proc_status));
+                            // set_proc_status(child_exec_proc, STOPPED);
+                            break;
+                        }
+                    }
+
+                    // give control back to the shell process
+                    tcsetpgrp(STDIN_FILENO, getpid());
+                    printf("==========================================\n");
+                    printf("Returning controll to shell process\n");
+                    printf("Foreground process grp is now - %d\n", tcgetpgrp(0));
+                    // reset disposition to default
+                    signal(SIGTTOU, SIG_DFL);
+                }
             }
         }
-        // printf("here\n");
     }
     return 0;
 }

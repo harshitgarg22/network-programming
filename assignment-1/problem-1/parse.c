@@ -29,45 +29,49 @@ PARSED_SINGLE_CMD parse_single_cmd(char* cmd) {
     return new_cmd;
 }
 
-PARSED_CMD parser(char *cmd) {
-    char *double_pipe = strstr(cmd, "||");
-    char *triple_pipe = strstr(cmd, "|||");
-
+PARSED_CMD parse_cmd(char *cmd) {
     PARSED_CMD parsed;
+    parsed.num_cmds = 0;
 
-    if (double_pipe == NULL && triple_pipe == NULL) {
+    char *double_loc = strstr(cmd, "||");
+    char *triple_loc = strstr(cmd, "|||");
+
+    if (!double_loc && !triple_loc) {
+        parsed.cmds = malloc(sizeof(char*));
+        parsed.cmds[0] = strdup(cmd);
         parsed.pipe_type = 1;
-        parsed.parent = strdup(cmd);
-        parsed.children = NULL;
         return parsed;
     }
 
     char *delim;
-    if (triple_pipe) {
-        delim = "|||";   
+    int pipe_type;
+    if (triple_loc) {
+        delim = "|||";
         parsed.pipe_type = 3;
     }
-    else if (double_pipe) {
+    else if (double_loc) {
         delim = "||";
         parsed.pipe_type = 2;
     }
 
-    char *dup_cmd = strdup(cmd);
-    char *token = strtok(dup_cmd,delim);
-    parsed.parent = strdup(token);
+    char *dupcmd = strdup(cmd);
+    char *token = strtok(dupcmd,delim);
+    char *parent = strdup(token);
     token = strtok(NULL, delim);
-
-    // token now points to the comma-separated string of child commands
     char *children = strdup(token);
-    free(dup_cmd);
-    parsed.children = malloc(sizeof(char*) * MAX_NUM_CMDS);
+    free(dupcmd);
 
-    char *child_tok = strtok(children, ",");
+    char *child = strtok(children, ",");
+    parsed.cmds = malloc(sizeof(char*) * MAX_NUM_CMDS);
     int index = 0;
-    while (child_tok) {
-        parsed.children[index++] = strdup(child_tok);
-        child_tok = strtok(NULL, ",");
-    } 
-    free(children);
+
+    while (child) {
+        parsed.cmds[index] = malloc(sizeof(char) * MAX_CMD_LEN);
+        strcat(parsed.cmds[index], parent);
+        strcat(parsed.cmds[index], "|");
+        strcat(parsed.cmds[index], child);
+        index++;
+        child = strtok(NULL, ",");
+    }
     return parsed;
 }
