@@ -88,7 +88,7 @@ int READ_EXEC_WRITE(PROC_IPC *read_from, char *single_cmd, PROC_IPC *write_to) {
 }
 
 int exec_cmd(char *cmd) {
-    PARSED_CMD parsed = parse_single_cmd(cmd);
+    PARSED_SINGLE_CMD parsed = parse_single_cmd(cmd);
     
     PROC_IPC *read_end = NULL;
     PROC_IPC *write_end = NULL;

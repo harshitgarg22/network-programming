@@ -5,8 +5,8 @@
 #include "parse.h"
 #include "constants.h"
 
-PARSED_CMD parse_single_cmd(char* cmd) {
-    PARSED_CMD new_cmd;
+PARSED_SINGLE_CMD parse_single_cmd(char* cmd) {
+    PARSED_SINGLE_CMD new_cmd;
     new_cmd.cmd_tokens = malloc(sizeof(char*) * MAX_NUM_CMDS);
     new_cmd.num_tokens = 0;
 
@@ -29,36 +29,45 @@ PARSED_CMD parse_single_cmd(char* cmd) {
     return new_cmd;
 }
 
-PARSED_CMD *parse_cmd(PARSED_CMD *cmdgrp, char *cmd) {
-    char *double_pipe_loc = strstr(cmd, "||");
-    char *triple_pipe_loc = strstr(cmd, "|||");
+PARSED_CMD parser(char *cmd) {
+    char *double_pipe = strstr(cmd, "||");
+    char *triple_pipe = strstr(cmd, "|||");
 
-    char *parent = malloc(sizeof(char) * 10);
-    if (double_pipe_loc) {
-        strncpy(parent, cmd, double_pipe_loc - cmd);
-        double_pipe_loc = double_pipe_loc + 2;
+    PARSED_CMD parsed;
 
-        char *children = strdup(double_pipe_loc);
-        char *token = strtok(children, ",");
-        
-        int index = 0;
-        while (token) {
-            char *partial_cmd = malloc(sizeof(char) * 50);
-            strcat(partial_cmd, parent);
-            strcat(partial_cmd, "|");
-            strcat(partial_cmd, token);
-
-            token = strtok(NULL, ",");
-            cmdgrp[index++] = parse_single_cmd(partial_cmd);
-            free(partial_cmd);
-        }
-        cmdgrp[index].num_tokens = -1;
-        free(children);
-        free(parent);
+    if (double_pipe == NULL && triple_pipe == NULL) {
+        parsed.pipe_type = 1;
+        parsed.parent = strdup(cmd);
+        parsed.children = NULL;
+        return parsed;
     }
-    else {
-        cmdgrp[0] = parse_single_cmd(cmd);
-        cmdgrp[1].num_tokens = -1;
+
+    char *delim;
+    if (triple_pipe) {
+        delim = "|||";   
+        parsed.pipe_type = 3;
     }
-    return cmdgrp;
+    else if (double_pipe) {
+        delim = "||";
+        parsed.pipe_type = 2;
+    }
+
+    char *dup_cmd = strdup(cmd);
+    char *token = strtok(dup_cmd,delim);
+    parsed.parent = strdup(token);
+    token = strtok(NULL, delim);
+
+    // token now points to the comma-separated string of child commands
+    char *children = strdup(token);
+    free(dup_cmd);
+    parsed.children = malloc(sizeof(char*) * MAX_NUM_CMDS);
+
+    char *child_tok = strtok(children, ",");
+    int index = 0;
+    while (child_tok) {
+        parsed.children[index++] = strdup(child_tok);
+        child_tok = strtok(NULL, ",");
+    } 
+    free(children);
+    return parsed;
 }
