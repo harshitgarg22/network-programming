@@ -37,8 +37,8 @@ Assumptions:
 #include <string.h>
 #include <stdbool.h>
 #include <unistd.h>
-#include <string.h>
 #include <ctype.h>
+#include <signal.h>
 
 ////////////////////////////////////////////
 // Constants
@@ -63,9 +63,10 @@ Assumptions:
 
 
 ////////////////////////////////////////////
-// Data Structures
+// Data Structures and global variables
 ////////////////////////////////////////////
 
+int child_pid;
 
 ////////////////////////////////////////////
 // Functions
@@ -87,12 +88,65 @@ void reset () {
   printf("\033[0m");
 }
 
+
 /*
-    TODO: execute the given command with the given input on the current node and return the output
+    handling the exiting of one process if the other exits manually.
+*/
+void sigusr1_handler(int signum){
+    exit(1);
+}
+
+/*
+    execute the given command with the given input on the current node and return the output
 */
 char* execute_on_current_node(char* input, char* command){
+    char* output = NULL;
+    printf("received command: %s, input: %s\n", command, input);
     
-    return NULL;
+    // handling cd command
+    if (command[0] == 'c' && command[1] == 'd' && command[2] == ' '){
+        if (chdir (command + 3) < 0){
+            perror("chdir");
+            printf("Couldn't change directory.\n");
+        }
+        output = malloc(sizeof(char));
+        strcpy(output, "\0");
+        return output;
+    }
+
+    // use a pipe to send command input to the process that executes the command as stdin
+    int p[2];
+    pipe(p);
+
+    write (p[1], input, strlen(input)); // write the input to write end of pipe
+    close(p[1]); // don't have to write anything else
+    dup2(p[0], 0);  // fd 0 is now the pipe read end
+
+    FILE* cmd_output_f = popen(command, "r"); // Executes command in another process and returns fd for the output
+    if (cmd_output_f == NULL){
+        perror("popen");
+        kill(getppid(), SIGUSR1);
+        exit(1);
+    }
+
+    // read the output from the fd
+    char tmp_buffer[200];
+    int curr_size = 1;
+    while (fgets(tmp_buffer, sizeof(tmp_buffer), cmd_output_f) != NULL) {
+        output = realloc(output, curr_size + strlen(tmp_buffer)); 
+        if (output == NULL) {
+            printf ("Memory allocation  error. Exiting. \n");
+            kill(getppid(), SIGUSR1);
+            exit(1);
+        } 
+        strcpy(output + curr_size - 1, tmp_buffer);
+        curr_size += strlen(tmp_buffer); 
+    }
+
+    // close
+    close(p[0]);
+    pclose(cmd_output_f);
+    return output;
 }
 
 /*
@@ -105,8 +159,14 @@ char* get_header_str(char* co, int size){
         s = s/10;
         num_length++;
     }
+    if (size == 0)
+        num_length = 1;
     if (num_length > HEADER_SIZE - 1){
         printf ("output is too long, exiting.\n");
+        if (getpid() == child_pid)
+            kill(getppid(), SIGUSR1);
+        else
+            kill(child_pid, SIGUSR1);
         exit (1);
     }
     char* zeroes = malloc((HEADER_SIZE - num_length)* sizeof (char));
@@ -136,13 +196,13 @@ void shell_handler(int serv_fd){
         }
         cmd_buff[cmd_inp_len-1] = '\0';
 
-        // TODO: Figure out how to exit the child as well
         if (strcmp(cmd_buff, "exit") == 0) {
             green();
             printf("\nEXITING SHELL...\n\n");
             reset();
             free(cmd_buff);
-            break;
+            kill(child_pid, SIGUSR1);
+            exit(1);
         }
 
         // send the command to the server
@@ -153,37 +213,42 @@ void shell_handler(int serv_fd){
         if (bytes_sent < 0){
             perror ("write");
             printf ("Exiting application.\n");
+            kill(child_pid, SIGUSR1);
             exit(1);
         }
         if (bytes_sent < strlen(msg)){
             printf ("\nUnable to send the complete command to server. Possible network error. Exiting application.\n");
+            kill(child_pid, SIGUSR1);
             exit(1);
         }
 
-        printf ("Command sent to server. Processing....\n");
+        printf ("Command sent to server: %s. Waiting for response....\n", msg);
 
         // read the output header received as response
         char* output_hdr = malloc((1 + HEADER_SIZE) * sizeof(char));
         int bytes_read = read (serv_fd, output_hdr, HEADER_SIZE);
         if (bytes_read < 0){
             perror ("read");
+            kill(child_pid, SIGUSR1);
             exit(1);
         }
+        output_hdr[HEADER_SIZE] = '\0';
+        printf ("output header received: %s\n", output_hdr);
 
         // read the rest of the output received as response
         char* output = NULL;
         if (output_hdr[0] == 'o'){
             // setup the receiving char array
-            output_hdr[HEADER_SIZE] = '\0';
             int output_size = atoi(output_hdr+1);
             output = malloc((output_size+1)*sizeof(char));
 
             // read from socket into output array
-            bytes_read = read (serv_fd, &output, output_size);
+            bytes_read = read (serv_fd, output, output_size);
             output[output_size] = '\0';
         }
         else {
-            printf ("\nPossible application or network error detected. Exiting application.\n");
+            printf ("\ntPossible application or network error detected. Exiting application.\n");
+            kill(child_pid, SIGUSR1);
             exit(1);
         }
 
@@ -219,24 +284,28 @@ void request_handler(){
         int sizereceived = 0;
         int serv_sock = accept(cliex_sock, (struct sockaddr*)&serv_addr,&sizereceived);
         
+        int bytes_read = 0;
+
         // read command header
         char* cmd_hdr = malloc((1 + HEADER_SIZE) * sizeof(char));
-        int bytes_read = read (serv_sock, cmd_hdr, HEADER_SIZE);
+        bytes_read = read (serv_sock, cmd_hdr, HEADER_SIZE);
         if (bytes_read < 0){
             perror ("read");
+            kill(getppid(), SIGUSR1);
             exit(1);
         }
         cmd_hdr[HEADER_SIZE] = '\0';
-
+        printf ("cmd_header: %s\n", cmd_hdr);
         // read input header
         char* inp_hdr = malloc((1 + HEADER_SIZE) * sizeof(char));
-        int bytes_read = read (serv_sock, inp_hdr, HEADER_SIZE);
+        bytes_read = read (serv_sock, inp_hdr, HEADER_SIZE);
         if (bytes_read < 0){
             perror ("read");
+            kill(getppid(), SIGUSR1);
             exit(1);
         }
         inp_hdr[HEADER_SIZE] = '\0';
-
+        printf ("inp_header: %s\n", inp_hdr);
         // read the input from socket
         char* inp = NULL;
         if (inp_hdr[0] == 'i'){
@@ -246,14 +315,15 @@ void request_handler(){
             inp = malloc((inp_size+1)*sizeof(char));
             
             // read from socket into input array
-            bytes_read = read (serv_sock, &inp, inp_size);
+            bytes_read = read (serv_sock, inp, inp_size);
             inp[inp_size] = '\0';
         }
         else {
             printf ("\nPossible application or network error detected. Exiting application.\n");
+            kill(getppid(), SIGUSR1);
             exit(1);
         }
-
+        printf ("inp: %s\n", inp);
         // read the commad from socket
         char* cmd = NULL;
         if (cmd_hdr[0] == 'c'){
@@ -262,14 +332,15 @@ void request_handler(){
             cmd = malloc((cmd_size+1)*sizeof(char));
             
             // read from socket into cmd array
-            bytes_read = read (serv_sock, &cmd, cmd_size);
+            bytes_read = read (serv_sock, cmd, cmd_size);
             cmd[cmd_size] = '\0';
         }
         else {
             printf ("\nPossible application or network error detected. Exiting application.\n");
+            kill(getppid(), SIGUSR1);
             exit(1);
         }
-
+        printf ("cmd: %s\n", cmd);
         // execute command on this machine, with the given input and get the output
         char* output = NULL;
         output = execute_on_current_node(inp, cmd);
@@ -283,13 +354,15 @@ void request_handler(){
         if (bytes_sent < 0){
             perror ("write");
             printf ("Exiting application.\n");
+            kill(getppid(), SIGUSR1);
             exit(1);
         }
         if (bytes_sent < strlen(msg)){
             printf ("\nUnable to send the complete output to server. Possible network error. Exiting application.\n");
+            kill(getppid(), SIGUSR1);
             exit(1);
         }
-        
+        printf ("output sent: %s\n", msg);
         free (inp);
         free (inp_hdr);
         free (cmd);
@@ -307,6 +380,9 @@ void request_handler(){
 */
 int main (int argc, char* argv[]) {
 
+    // register child / parent killer
+    signal(SIGUSR1, sigusr1_handler);
+    
     // create socket
     int serv_socket = socket(PF_INET, SOCK_STREAM, IPPROTO_TCP);
 
@@ -325,7 +401,7 @@ int main (int argc, char* argv[]) {
     }
 
     // create a process for listening to commands from server, while parent process handles the shell
-    int child_pid = fork();
+    child_pid = fork();
     if (child_pid == 0){ // child process: handles incoming commands from server
         request_handler();
     }
