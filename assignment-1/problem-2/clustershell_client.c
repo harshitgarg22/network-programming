@@ -146,7 +146,6 @@ char* execute_on_current_node(char* input, char* command){
     // close
     close(p[0]);
     pclose(cmd_output_f);
-    // TODO: DO I need to reverse the closings above the write? 
     return output;
 }
 

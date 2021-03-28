@@ -257,6 +257,7 @@ void free_parsed_commands(PARSED_COMMANDS cmds){
 
 /*
     execute the given command on its node and return the output
+    TODO: Add support for n*
 */
 char* execute_on_remote_node(COMMAND cmd, CONNECTED_CLIENTS clients) {
     // find the client address for the command node, change the port, and make a connection to the client executioner
@@ -418,27 +419,40 @@ int main(int argc, char* argv[]){
             
             int command_size = atoi(header_buf+1); //get the size of the message (command) as int
             printf ("command size read: %d\n", command_size);
+
             // read the command as string into command_buffer from the commander node socket
-            char command_buffer[command_size+1]; 
-            int bytes_read = read (clients.list[commander_idx].clientfd, command_buffer, command_size);
-            command_buffer[command_size] = '\0';
+            char command[command_size+1]; 
+            int bytes_read = read (clients.list[commander_idx].clientfd, command, command_size);
+            command[command_size] = '\0';
             
-            printf ("command read: %s\n", command_buffer);
+            printf ("command read: %s\n", command);
 
             // parse the command
-            PARSED_COMMANDS cmds = parse_command(command_buffer, clients.list[commander_idx].nodenum);
+            PARSED_COMMANDS cmds = parse_command(command, clients.list[commander_idx].nodenum);
             
-            // execute the command on various nodes and get final output
+            // get the output to the command, either from server or by coordinating various nodes
             char* output = NULL;
-            printf ("cmds.num: %d\n", cmds.num);
-            for (int i = 0; i < cmds.num; i++){
-                cmds.list[i].input = output;
-                printf("here1\n");
-                output = execute_on_remote_node(cmds.list[i], clients); // output is the string containing the output of the command till subcommand i
-                printf("here2\n");
-            }
-            printf("here\n");
             
+            if (!strcmp(command, "nodes")){ // nodes command
+                output = malloc((MAX_SIZE_OF_LINE_IN_CONFIG*MAX_NUM_OF_CONNECTED_CLIENTS + 1)*sizeof(char));
+                output[0] = '\0';
+                for(int i = 0; i < nodelist.num; i++){
+                    int curr_size = strlen(output);
+                    sprintf(output + curr_size, "n%d %s\n", i+1, nodelist.ip[i]);
+                }
+            }
+            else {
+            // execute the command on various nodes and get final output
+                printf ("cmds.num: %d\n", cmds.num);
+                for (int i = 0; i < cmds.num; i++){
+                    cmds.list[i].input = output;
+                    printf("here1\n");
+                    output = execute_on_remote_node(cmds.list[i], clients); // output is the string containing the output of the command till subcommand i
+                    printf("here2\n");
+                }
+                printf("here\n");
+            }
+
             // send the final output to the commander node socket
             char* header_str = get_header_str("o", strlen(output));
             char* return_msg = malloc ((strlen(output) + strlen(header_str) + 1) * sizeof(char));
