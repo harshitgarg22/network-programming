@@ -137,7 +137,6 @@ char* execute_on_current_node(char* input, char* command){
     close(p[0]);
     pclose(cmd_output_f);
     // TODO: DO I need to reverse the closings above the write? 
-    printf ("output for the received command: %s\n", output);
     return output;
 }
 
@@ -352,7 +351,7 @@ void request_handler(){
             kill(getppid(), SIGUSR1);
             exit(1);
         }
-        
+        printf ("output sent: %s\n", msg);
         free (inp);
         free (inp_hdr);
         free (cmd);

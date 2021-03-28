@@ -336,6 +336,7 @@ char* execute_on_remote_node(COMMAND cmd, CONNECTED_CLIENTS clients) {
         printf ("\nPossible application or network error detected. Exiting application.\n");
         exit(1);
     }
+
     free (output_hdr);
     close (cliex_fd);
     return output;
@@ -440,6 +441,9 @@ int main(int argc, char* argv[]){
             // send the final output to the commander node socket
             char* header_str = get_header_str("o", strlen(output));
             char* return_msg = malloc ((strlen(output) + strlen(header_str) + 1) * sizeof(char));
+            strcpy(return_msg, header_str);
+            strcat(return_msg, output);
+            printf ("Sending message to commander: %s\n", return_msg);
             int bytes_sent = write (clients.list[commander_idx].clientfd, return_msg, strlen(return_msg));
             if (bytes_sent < 0){
                 perror ("write");
