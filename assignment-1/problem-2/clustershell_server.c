@@ -212,11 +212,13 @@ char* get_header_str(char* co, int size){
         s = s/10;
         num_length++;
     }
+    if (size == 0)
+        num_length = 1;
     if (num_length > HEADER_SIZE - 1){
         printf ("output is too long, exiting.\n");
         exit (1);
     }
-    char* zeroes = malloc((HEADER_SIZE - num_length)* sizeof (char));
+    char* zeroes = malloc((HEADER_SIZE - 1 - num_length + 1)* sizeof (char));
     for (int i = 0; i < HEADER_SIZE - num_length - 1; i++)
         zeroes[i] = '0';
     zeroes[HEADER_SIZE-num_length - 1] = '\0';
@@ -271,20 +273,31 @@ char* execute_on_remote_node(COMMAND cmd, CONNECTED_CLIENTS clients) {
         perror("connect");
         exit(1);
     }
-
+    printf ("here3\n");
     // compose the command message
     char* header_str = get_header_str("c", strlen(cmd.command));
-    char* inphdr_str;
+    char* inphdr_str = NULL;
+    int input_length = 0;
     if (cmd.input != NULL)
-        inphdr_str = get_header_str("i", strlen(cmd.input));
-    else 
-        inphdr_str = get_header_str("i", 0);
-    char* msg = malloc((strlen(inphdr_str) + strlen(header_str) + strlen(cmd.input) + strlen(cmd.command) + 1) * sizeof(char));
+        input_length = strlen(cmd.input);
+    inphdr_str = get_header_str("i", input_length);
+    printf("input header: %s\n", inphdr_str);
+    printf("cmd header: %s\n", header_str);
+    printf("cmd: %s\n", cmd.command);
+    printf("inp: %s\n", cmd.input);
+    char* msg = malloc((strlen(inphdr_str) + strlen(header_str) + input_length + strlen(cmd.command) + 1) * sizeof(char));
+    printf("here9\n");
     strcpy(msg, header_str);
+    printf("msg +ch: %s\n", msg);
     strcat(msg, inphdr_str);
-    strcat(msg, cmd.input);
+    printf("msg +ih: %s\n", msg);
+    if(cmd.input!=NULL)
+        strcat(msg, cmd.input);
+    printf("msg +i: %s\n", msg);
     strcat(msg, cmd.command);
-
+    printf("msg +c: %s\n", msg);
+    printf("here4\n");
+    printf("msg: %s\n", msg);
     // send the command message
     int num;
     num = write(cliex_fd, msg, strlen(msg));
@@ -297,7 +310,7 @@ char* execute_on_remote_node(COMMAND cmd, CONNECTED_CLIENTS clients) {
         printf ("\nUnable to send the complete command to client. Possible network error. Exiting application.\n");
         exit(1);
     }
-
+    printf("here5\n");
     // read the output header received as response
     char* output_hdr = malloc((1 + HEADER_SIZE) * sizeof(char));
     int bytes_read = 0;
@@ -306,7 +319,7 @@ char* execute_on_remote_node(COMMAND cmd, CONNECTED_CLIENTS clients) {
         perror ("read");
         exit(1);
     }
-
+    printf("here6\n");
     // read the rest of the output received as response
     char* output = NULL;
     if (output_hdr[0] == 'o'){
@@ -412,14 +425,17 @@ int main(int argc, char* argv[]){
 
             // parse the command
             PARSED_COMMANDS cmds = parse_command(command_buffer, clients.list[commander_idx].nodenum);
-            printf("here\n");
+            
             // execute the command on various nodes and get final output
             char* output = NULL;
+            printf ("cmds.num: %d\n", cmds.num);
             for (int i = 0; i < cmds.num; i++){
                 cmds.list[i].input = output;
+                printf("here1\n");
                 output = execute_on_remote_node(cmds.list[i], clients); // output is the string containing the output of the command till subcommand i
+                printf("here2\n");
             }
-
+            printf("here\n");
             
             // send the final output to the commander node socket
             char* header_str = get_header_str("o", strlen(output));
@@ -451,5 +467,5 @@ int main(int argc, char* argv[]){
 
 // testing
 int testmain (){
-    printf ("%s", get_header_str("o", 345));
+    printf ("%s", get_header_str("i", 0));
 }

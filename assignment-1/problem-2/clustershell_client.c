@@ -101,7 +101,7 @@ void sigusr1_handler(int signum){
 */
 char* execute_on_current_node(char* input, char* command){
     char* output = NULL;
-
+    printf("received command: %s, input: %s\n", command, input);
     // TODO: account for cd command
 
     // use a pipe to send command input to the process that executes the command as stdin
@@ -137,7 +137,7 @@ char* execute_on_current_node(char* input, char* command){
     close(p[0]);
     pclose(cmd_output_f);
     // TODO: DO I need to reverse the closings above the write? 
-    
+    printf ("output for the received command: %s\n", output);
     return output;
 }
 
@@ -222,21 +222,22 @@ void shell_handler(int serv_fd){
             kill(child_pid, SIGUSR1);
             exit(1);
         }
+        output_hdr[HEADER_SIZE] = '\0';
+        printf ("output header received: %s\n", output_hdr);
 
         // read the rest of the output received as response
         char* output = NULL;
         if (output_hdr[0] == 'o'){
             // setup the receiving char array
-            output_hdr[HEADER_SIZE] = '\0';
             int output_size = atoi(output_hdr+1);
             output = malloc((output_size+1)*sizeof(char));
 
             // read from socket into output array
-            bytes_read = read (serv_fd, &output, output_size);
+            bytes_read = read (serv_fd, output, output_size);
             output[output_size] = '\0';
         }
         else {
-            printf ("\nPossible application or network error detected. Exiting application.\n");
+            printf ("\ntPossible application or network error detected. Exiting application.\n");
             kill(child_pid, SIGUSR1);
             exit(1);
         }
@@ -284,7 +285,7 @@ void request_handler(){
             exit(1);
         }
         cmd_hdr[HEADER_SIZE] = '\0';
-
+        printf ("cmd_header: %s\n", cmd_hdr);
         // read input header
         char* inp_hdr = malloc((1 + HEADER_SIZE) * sizeof(char));
         bytes_read = read (serv_sock, inp_hdr, HEADER_SIZE);
@@ -294,7 +295,7 @@ void request_handler(){
             exit(1);
         }
         inp_hdr[HEADER_SIZE] = '\0';
-
+        printf ("inp_header: %s\n", inp_hdr);
         // read the input from socket
         char* inp = NULL;
         if (inp_hdr[0] == 'i'){
@@ -304,7 +305,7 @@ void request_handler(){
             inp = malloc((inp_size+1)*sizeof(char));
             
             // read from socket into input array
-            bytes_read = read (serv_sock, &inp, inp_size);
+            bytes_read = read (serv_sock, inp, inp_size);
             inp[inp_size] = '\0';
         }
         else {
@@ -312,7 +313,7 @@ void request_handler(){
             kill(getppid(), SIGUSR1);
             exit(1);
         }
-
+        printf ("inp: %s\n", inp);
         // read the commad from socket
         char* cmd = NULL;
         if (cmd_hdr[0] == 'c'){
@@ -321,7 +322,7 @@ void request_handler(){
             cmd = malloc((cmd_size+1)*sizeof(char));
             
             // read from socket into cmd array
-            bytes_read = read (serv_sock, &cmd, cmd_size);
+            bytes_read = read (serv_sock, cmd, cmd_size);
             cmd[cmd_size] = '\0';
         }
         else {
@@ -329,7 +330,7 @@ void request_handler(){
             kill(getppid(), SIGUSR1);
             exit(1);
         }
-
+        printf ("cmd: %s\n", cmd);
         // execute command on this machine, with the given input and get the output
         char* output = NULL;
         output = execute_on_current_node(inp, cmd);
