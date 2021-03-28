@@ -130,19 +130,15 @@ int exec_cmd(char *cmd) {
         }
         else {
             int child_proc_status;
-            while (1) {
-                waitpid(child_proc, &child_proc_status, WUNTRACED);
-                if (WIFEXITED(child_proc_status) || WIFSIGNALED(child_proc_status)) {
-                    printf("\nCommand done executing ...\n");
-                    // remove_proc(child_exec_proc);
-                    break;
-                }
-                if (WIFSTOPPED(child_proc_status)) {
-                    // child process was stopped by a signal
-                    printf("\nCommand stopped by signal %d\n", WSTOPSIG(child_proc_status));
-                    // set_proc_status(child_exec_proc, STOPPED);
-                    break;
-                }
+            waitpid(child_proc, &child_proc_status, WUNTRACED);
+            if (WIFEXITED(child_proc_status) || WIFSIGNALED(child_proc_status)) {
+                printf("\nCommand done executing ...\n");
+                // remove_proc(child_exec_proc);
+            }
+            if (WIFSTOPPED(child_proc_status)) {
+                // child process was stopped by a signal
+                printf("\nCommand stopped by signal %d\n", WSTOPSIG(child_proc_status));
+                // set_proc_status(child_exec_proc, STOPPED);
             }
         }
     }
