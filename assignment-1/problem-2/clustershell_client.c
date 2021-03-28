@@ -37,8 +37,8 @@ Assumptions:
 #include <string.h>
 #include <stdbool.h>
 #include <unistd.h>
-#include <string.h>
 #include <ctype.h>
+#include <signal.h>
 
 ////////////////////////////////////////////
 // Constants
@@ -63,9 +63,10 @@ Assumptions:
 
 
 ////////////////////////////////////////////
-// Data Structures
+// Data Structures and global variables
 ////////////////////////////////////////////
 
+int child_pid;
 
 ////////////////////////////////////////////
 // Functions
@@ -87,12 +88,57 @@ void reset () {
   printf("\033[0m");
 }
 
+
 /*
-    TODO: execute the given command with the given input on the current node and return the output
+    handling the exiting of one process if the other exits manually.
+*/
+void sigusr1_handler(int signum){
+    exit(1);
+}
+
+/*
+    execute the given command with the given input on the current node and return the output
 */
 char* execute_on_current_node(char* input, char* command){
+    char* output = NULL;
+
+    // TODO: account for cd command
+
+    // use a pipe to send command input to the process that executes the command as stdin
+    int p[2];
+    pipe(p);
+
+    write (p[1], input, strlen(input)); // write the input to write end of pipe
+    close(p[1]); // don't have to write anything else
+    dup2(p[0], 0);  // fd 0 is now the pipe read end
+
+    FILE* cmd_output_f = popen(command, "r"); // Executes command in another process and returns fd for the output
+    if (cmd_output_f == NULL){
+        perror("popen");
+        kill(getppid(), SIGUSR1);
+        exit(1);
+    }
+
+    // read the output from the fd
+    char tmp_buffer[200];
+    int curr_size = 1;
+    while (fgets(tmp_buffer, sizeof(tmp_buffer), cmd_output_f) != NULL) {
+        output = realloc(output, curr_size + strlen(tmp_buffer)); 
+        if (output == NULL) {
+            printf ("Memory allocation  error. Exiting. \n");
+            kill(getppid(), SIGUSR1);
+            exit(1);
+        } 
+        strcpy(output + curr_size - 1, tmp_buffer);
+        curr_size += strlen(tmp_buffer); 
+    }
+
+    // close
+    close(p[0]);
+    pclose(cmd_output_f);
+    // TODO: DO I need to reverse the closings above the write? 
     
-    return NULL;
+    return output;
 }
 
 /*
@@ -107,6 +153,10 @@ char* get_header_str(char* co, int size){
     }
     if (num_length > HEADER_SIZE - 1){
         printf ("output is too long, exiting.\n");
+        if (getpid() == child_pid)
+            kill(getppid(), SIGUSR1);
+        else
+            kill(child_pid, SIGUSR1);
         exit (1);
     }
     char* zeroes = malloc((HEADER_SIZE - num_length)* sizeof (char));
@@ -136,13 +186,13 @@ void shell_handler(int serv_fd){
         }
         cmd_buff[cmd_inp_len-1] = '\0';
 
-        // TODO: Figure out how to exit the child as well
         if (strcmp(cmd_buff, "exit") == 0) {
             green();
             printf("\nEXITING SHELL...\n\n");
             reset();
             free(cmd_buff);
-            break;
+            kill(child_pid, SIGUSR1);
+            exit(1);
         }
 
         // send the command to the server
@@ -153,10 +203,12 @@ void shell_handler(int serv_fd){
         if (bytes_sent < 0){
             perror ("write");
             printf ("Exiting application.\n");
+            kill(child_pid, SIGUSR1);
             exit(1);
         }
         if (bytes_sent < strlen(msg)){
             printf ("\nUnable to send the complete command to server. Possible network error. Exiting application.\n");
+            kill(child_pid, SIGUSR1);
             exit(1);
         }
 
@@ -167,6 +219,7 @@ void shell_handler(int serv_fd){
         int bytes_read = read (serv_fd, output_hdr, HEADER_SIZE);
         if (bytes_read < 0){
             perror ("read");
+            kill(child_pid, SIGUSR1);
             exit(1);
         }
 
@@ -184,6 +237,7 @@ void shell_handler(int serv_fd){
         }
         else {
             printf ("\nPossible application or network error detected. Exiting application.\n");
+            kill(child_pid, SIGUSR1);
             exit(1);
         }
 
@@ -224,6 +278,7 @@ void request_handler(){
         int bytes_read = read (serv_sock, cmd_hdr, HEADER_SIZE);
         if (bytes_read < 0){
             perror ("read");
+            kill(getppid(), SIGUSR1);
             exit(1);
         }
         cmd_hdr[HEADER_SIZE] = '\0';
@@ -233,6 +288,7 @@ void request_handler(){
         int bytes_read = read (serv_sock, inp_hdr, HEADER_SIZE);
         if (bytes_read < 0){
             perror ("read");
+            kill(getppid(), SIGUSR1);
             exit(1);
         }
         inp_hdr[HEADER_SIZE] = '\0';
@@ -251,6 +307,7 @@ void request_handler(){
         }
         else {
             printf ("\nPossible application or network error detected. Exiting application.\n");
+            kill(getppid(), SIGUSR1);
             exit(1);
         }
 
@@ -267,6 +324,7 @@ void request_handler(){
         }
         else {
             printf ("\nPossible application or network error detected. Exiting application.\n");
+            kill(getppid(), SIGUSR1);
             exit(1);
         }
 
@@ -283,10 +341,12 @@ void request_handler(){
         if (bytes_sent < 0){
             perror ("write");
             printf ("Exiting application.\n");
+            kill(getppid(), SIGUSR1);
             exit(1);
         }
         if (bytes_sent < strlen(msg)){
             printf ("\nUnable to send the complete output to server. Possible network error. Exiting application.\n");
+            kill(getppid(), SIGUSR1);
             exit(1);
         }
         
@@ -307,6 +367,9 @@ void request_handler(){
 */
 int main (int argc, char* argv[]) {
 
+    // register child / parent killer
+    signal(SIGUSR1, sigusr1_handler);
+    
     // create socket
     int serv_socket = socket(PF_INET, SOCK_STREAM, IPPROTO_TCP);
 
@@ -325,7 +388,7 @@ int main (int argc, char* argv[]) {
     }
 
     // create a process for listening to commands from server, while parent process handles the shell
-    int child_pid = fork();
+    child_pid = fork();
     if (child_pid == 0){ // child process: handles incoming commands from server
         request_handler();
     }
