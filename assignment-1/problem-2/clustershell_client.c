@@ -273,9 +273,11 @@ void request_handler(){
         int sizereceived = 0;
         int serv_sock = accept(cliex_sock, (struct sockaddr*)&serv_addr,&sizereceived);
         
+        int bytes_read = 0;
+
         // read command header
         char* cmd_hdr = malloc((1 + HEADER_SIZE) * sizeof(char));
-        int bytes_read = read (serv_sock, cmd_hdr, HEADER_SIZE);
+        bytes_read = read (serv_sock, cmd_hdr, HEADER_SIZE);
         if (bytes_read < 0){
             perror ("read");
             kill(getppid(), SIGUSR1);
@@ -285,7 +287,7 @@ void request_handler(){
 
         // read input header
         char* inp_hdr = malloc((1 + HEADER_SIZE) * sizeof(char));
-        int bytes_read = read (serv_sock, inp_hdr, HEADER_SIZE);
+        bytes_read = read (serv_sock, inp_hdr, HEADER_SIZE);
         if (bytes_read < 0){
             perror ("read");
             kill(getppid(), SIGUSR1);
