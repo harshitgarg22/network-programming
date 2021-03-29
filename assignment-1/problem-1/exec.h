@@ -10,7 +10,7 @@ typedef struct ipc_unit {
 PROC_IPC *create_ipc_pipe(int read_fd, int write_fd);
 
 // Parse a single command by separating its arguments.
-// Execute the command and return 0 if execution not possible
+// Execute the command and return 0 if execution is not possible
 int exec_single_cmd(char *cmd);
 
 // Count number of tokens in single command

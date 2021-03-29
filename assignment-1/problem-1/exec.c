@@ -27,8 +27,6 @@ int count_args(char *cmd) {
 }
 
 int exec_single_cmd(char *cmd) {
-    // vector of all arguments in the command (including command itself)
-    // e.g. ls -a becomes ["ls", "-a"]
     int num_args = count_args(cmd);
     char *cmd_args[num_args+1];  
 
