@@ -45,12 +45,7 @@ int exec_single_cmd(char *cmd) {
         fprintf(stderr, "%s: command not found\n", cmd_args[0]);
         return -1;
     }
-
-    if (execv(canonical_path, cmd_args) == -1) {
-        fprintf(stderr, "Could not execute command\n");
-        fprintf(stderr, "%s\n", strerror(errno));
-    }
-    free(canonical_path);
+    execv(canonical_path, cmd_args);
     return 0;
 }
 
@@ -62,7 +57,7 @@ PROC_IPC *create_ipc_pipe(int read_fd, int write_fd) {
     return new_pipe;
 }
 
-int READ_EXEC_WRITE(PROC_IPC *read_from, char *single_cmd, PROC_IPC *write_to) {
+int pipe_exec(PROC_IPC *read_from, char *single_cmd, PROC_IPC *write_to) {
     int pid = getpid();
     printf("\nExecuting command ** %s **\n", single_cmd);
     printf("PID - %d\n", pid);
@@ -122,7 +117,7 @@ int exec_cmd(char *cmd) {
         }
         else if (child_proc == 0) {
             // inside child process
-            if (READ_EXEC_WRITE(read_end, command, write_end) == 0) {
+            if (pipe_exec(read_end, command, write_end) == 0) {
                 exit(EXIT_SUCCESS);
             }
         }

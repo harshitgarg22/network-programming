@@ -28,7 +28,7 @@ char *search_path(char *cmd) {
             if (errno != ENOENT) {
                 fprintf(stderr, "!! ERROR: %s !!\n", strerror(errno));
                 printf("Exiting...\n");
-                exit(-1);
+                exit(EXIT_FAILURE);
             }
         }
         else {

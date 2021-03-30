@@ -29,20 +29,17 @@ char *handle_redirection(char *cmd) {
             file = remove_spaces(cmd + strlen(token) + 2);
             int fd;
             if ((fd = open(file, O_CREAT | O_WRONLY | O_APPEND, 0644)) < 0) {
-                printf("bad\n");
                 perror("Could not open file for append op\n");
                 return NULL;
             }
             printf("appending output of '%s' to file '%s'\n", token, file);
             dup2(fd, 1);
-            // free(dup_cmd);
             return token;
         }
         else if (strstr(cmd, ">") != NULL) {
             file = remove_spaces(cmd + strlen(token) + 1);
             int fd;
             if ((fd = open(file, O_CREAT | O_TRUNC | O_WRONLY, 0644)) < 0) {
-                printf("bad\n");
                 perror("Could not open file for write op\n");
                 return NULL;
             }
@@ -55,7 +52,6 @@ char *handle_redirection(char *cmd) {
             file = remove_spaces(cmd + strlen(token) + 1);
             int fd;
             if ((fd = open(file, O_CREAT | O_RDONLY, 0644)) < 0) {
-                printf("bad\n");
                 perror("Could not open file for read op\n");
                 return NULL;
             }
