@@ -10,6 +10,8 @@
 #define MAX_GRP_NAME 32
 #define MAX_MSG_HOLD 16
 #define MAX_GROUP_MEMBERS 16
+#define MAX_USR 100
+#define USR_OFFSET 1000
 
 typedef int UID;
 
@@ -32,6 +34,7 @@ typedef struct create_group {
 typedef struct request_group {
     char groupList[MAX_GROUP_COUNT][MAX_GRP_NAME];
     int groupCount;
+    char joint[MAX_GROUP_COUNT];
 } request_group;
 
 typedef struct join_group {
@@ -52,9 +55,15 @@ typedef struct group_message {
     time_t autoDeleteTimeOut;
 } group_message;
 
+typedef struct join_time {
+    time_t join_time;
+} join_time;
+
 typedef struct rcv_message {
     char msgText[MAX_MSG_SIZE];
     int gid;
+    time_t msgTime;
+    time_t autoDeleteTimeOut;
 } rcv_message;
 
 typedef struct msg_container {
@@ -68,6 +77,7 @@ typedef struct msg_container {
         send_message sendMessage;
         group_message groupMessage;
         rcv_message rcvMessage;
+        join_time joinTime;
     };
 } msg_container;
 

@@ -9,9 +9,9 @@
 
 #include "./msgq.h"
 
-void createGroup(int msgqid, char *grpname, int msgqid_rcv) {
+void createGroup(int msgqid, char *grpname, int msgqid_rcv, UID user_id) {
     msg_container crtgrp;
-    pid_t mypid = getpid();
+    UID mypid = user_id;
     crtgrp.mtype = 1;
     crtgrp.intent = CREATE_GROUP;
     strcpy(crtgrp.createGroup.groupName, grpname);
@@ -22,21 +22,21 @@ void createGroup(int msgqid, char *grpname, int msgqid_rcv) {
         return;
     }
     msg_container rcvmsg;
-    printf("sizeof(crtgrp): %d, MSGQID %d\n", sizeof(crtgrp), msgqid_rcv);
+    // printf("sizeof(crtgrp): %d, MSGQID %d\n", sizeof(crtgrp), msgqid_rcv);
 
-    if (msgrcv(msgqid_rcv, &rcvmsg, sizeof(rcvmsg) - sizeof(long), 2, 0) == -1) {
+    if (msgrcv(msgqid_rcv, &rcvmsg, sizeof(rcvmsg) - sizeof(long), 3, 0) == -1) {
         perror("Error while receiving message");
     }
     if (rcvmsg.createGroup.groupID == -1) {
         printf("Error while creating group: Group number limit reached\n");
     } else {
-        printf("Successfully created group with group ID = %d\n", rcvmsg.createGroup.groupID);
+        printf("Successfully created group %s with group ID = %d\n", rcvmsg.createGroup.groupName, rcvmsg.createGroup.groupID);
     }
 }
 
-int requestGroups(int msgqid, char groupList[][MAX_GROUP_COUNT][MAX_GRP_NAME], int msgqid_rcv) {
+int requestGroups(int msgqid, char groupList[MAX_GROUP_COUNT][MAX_GRP_NAME], char joint[], int msgqid_rcv, UID user_id) {
     msg_container rqstGrps;
-    pid_t mypid = getpid();
+    UID mypid = user_id;
     rqstGrps.mtype = 1;
     rqstGrps.intent = LIST_GROUPS;
     rqstGrps.src = mypid;
@@ -50,14 +50,15 @@ int requestGroups(int msgqid, char groupList[][MAX_GROUP_COUNT][MAX_GRP_NAME], i
     }
     int groupCount = grpList.requestGroup.groupCount;
     for (int i = 0; i < groupCount; ++i) {
-        strcpy((*groupList)[i], grpList.requestGroup.groupList[i]);
+        strcpy((groupList)[i], grpList.requestGroup.groupList[i]);
+        joint[i] = grpList.requestGroup.joint[i];
     }
     return groupCount;
 }
 
-void joinGroup(int msgqid, int groupChoice, int msgqid_rcv) {
+void joinGroup(int msgqid, int groupChoice, int msgqid_rcv, UID user_id) {
     msg_container joingrp;
-    pid_t mypid = getpid();
+    UID mypid = user_id;
     joingrp.joinGroup.groupID = groupChoice;
     joingrp.mtype = 1;
     joingrp.src = mypid;
@@ -77,11 +78,15 @@ void joinGroup(int msgqid, int groupChoice, int msgqid_rcv) {
     if (joingrp.joinGroup.groupID == -2) {
         printf("No more space left in group\n");
     }
+
+    if (joingrp.joinGroup.groupID == -3) {
+        printf("Already a member of this group.\n");
+    }
 }
 
-void sendPrivateMessage(int msgqid, UID senderID, char *msgText, int autoDel) {
+void sendPrivateMessage(int msgqid, UID senderID, char *msgText, int autoDel, UID user_id) {
     msg_container pvtmsg;
-    pid_t mypid = getpid();
+    UID mypid = user_id;
     pvtmsg.mtype = 1;
     pvtmsg.intent = SEND_PVT_MSG;
     pvtmsg.src = mypid;
@@ -90,14 +95,14 @@ void sendPrivateMessage(int msgqid, UID senderID, char *msgText, int autoDel) {
     pvtmsg.sendMessage.msgTime = time(0);
     pvtmsg.sendMessage.autoDeleteTimeOut = autoDel;
 
-    if (msgsnd(msgqid, &pvtmsg, sizeof(pvtmsg), 0) == -1) {
+    if (msgsnd(msgqid, &pvtmsg, sizeof(pvtmsg), MSG_NOERROR) == -1) {
         perror("sendPrivateMessage msgsnd");
     }
 }
 
-void sendGroupMessage(int msgqid, int groupChoice, char *msgText, int autoDel) {
+void sendGroupMessage(int msgqid, int groupChoice, char *msgText, int autoDel, UID user_id) {
     msg_container grpmsg;
-    pid_t mypid = getpid();
+    UID mypid = user_id;
     grpmsg.mtype = 1;
     grpmsg.intent = SEND_GRP_MSG;
     grpmsg.src = mypid;
@@ -106,15 +111,17 @@ void sendGroupMessage(int msgqid, int groupChoice, char *msgText, int autoDel) {
     grpmsg.groupMessage.msgTime = time(0);
     grpmsg.groupMessage.autoDeleteTimeOut = autoDel;
 
-    if (msgsnd(msgqid, &grpmsg, sizeof(msgqid), 0) == -1) {
+    if (msgsnd(msgqid, &grpmsg, sizeof(grpmsg), MSG_NOERROR) == -1) {
         perror("sendGroupMessage msgsnd");
     }
 }
 
 int main(int argc, char *argv[]) {
     UID user_id;
-    printf("Please login with your user id (0-99): ");
-    scanf("%d", &user_id);
+    do {
+        printf("Please login with your user id (1000-1099): ");
+        scanf("%d", &user_id);
+    } while (user_id > 1099 || user_id < 1000);
 
     int msgqid;
     key_t key;
@@ -123,19 +130,27 @@ int main(int argc, char *argv[]) {
         perror("ftok()\n");
         exit(-1);
     }
-    if ((msgqid = msgget(key, 0666 | IPC_CREAT)) == -1) {
-        perror("msgget()\n");
+    if ((msgqid = msgget(key, 0666)) == -1) {
+        printf("Could not connect to message queue. Check if server is running?\n");
         exit(-1);
     }
-    printf("Message Queue ID: %d\n", msgqid);
-    int choice = 0;
-    UID myid = getpid();
-    printf("Welcome, your id is %d.\n", myid);
+    msg_container joined;
+    joined.mtype = 1;
+    joined.intent = JOIN_SERVER;
+    joined.src = user_id;
+    time_t jointime = time(0);
+    joined.joinTime.join_time = jointime;
     printf("Connecting to server...\n");
+    if (msgsnd(msgqid, &joined, sizeof(joined) - sizeof(long), 0) == -1) {
+        perror("msgsnd connecting to server error");
+    }
+    printf("Common Message Queue ID: %d\n", msgqid);
+    int choice = 0;
+    printf("Welcome, your UID is %d.\n", user_id);
 
     pid_t child = fork();
     int msgqid_rcv;
-    key_t key_rcv = myid;
+    key_t key_rcv = user_id;
     if ((msgqid_rcv = msgget(key_rcv, 0666 | IPC_CREAT)) == -1) {
         perror("msgget()\n");
         exit(-1);
@@ -150,17 +165,21 @@ int main(int argc, char *argv[]) {
             switch (rcvmsg.intent) {
                 case RCV_PVT_MSG: {
                     ;
-                    printf("Message from %d: %s\n", rcvmsg.src, rcvmsg.rcvMessage.msgText);
+                    if (jointime - rcvmsg.rcvMessage.msgTime <= rcvmsg.rcvMessage.autoDeleteTimeOut) {
+                        printf("\nMessage from %d: %s\n", rcvmsg.src, rcvmsg.rcvMessage.msgText);
+                    }
                     break;
                 }
                 case RCV_GRP_MSG: {
                     ;
-                    printf("From %d on %d: %s\n", rcvmsg.src, rcvmsg.rcvMessage.gid, rcvmsg.rcvMessage.msgText);
+                    if (jointime - rcvmsg.rcvMessage.msgTime <= rcvmsg.rcvMessage.autoDeleteTimeOut) {
+                        printf("\nMessage from %d on gid %d: %s\n", rcvmsg.src, rcvmsg.rcvMessage.gid, rcvmsg.rcvMessage.msgText);
+                    }
                 }
                 default:
                     break;
             }
-            if (getppid() == 1) {
+            if (getppid() == 0) {
                 exit(0);
             }
         }
@@ -181,16 +200,25 @@ int main(int argc, char *argv[]) {
                 ;
                 char grpName[MAX_GRP_NAME];
                 printf("Please enter the name of your group (upto %d characters): ", MAX_GRP_NAME);
-                scanf("%s", grpName);
-                createGroup(msgqid, grpName, msgqid_rcv);
+                getc(stdin);
+                fgets(grpName, MAX_GRP_NAME, stdin);
+                grpName[strlen(grpName) - 1] = '\0';
+                // scanf("%[^\n]s", grpName);
+                createGroup(msgqid, grpName, msgqid_rcv, user_id);
                 break;
             }
             case 2: {
                 ;
                 char groupList[MAX_GROUP_COUNT][MAX_GRP_NAME];
-                int groupCount = requestGroups(msgqid, &groupList, msgqid_rcv);
+                char joint[MAX_GROUP_COUNT];
+                int groupCount = requestGroups(msgqid, groupList, joint, msgqid_rcv, user_id);
+                printf("\tS.No.\tName\tGID\tJoined?\n");
+                printf("\t------------------------------------\n");
                 for (int i = 0; i < groupCount; ++i) {
-                    printf("\t%d. %s w/ \tid = %d\n", i + 1, (*groupList)[i], i);
+                    printf("\t%d.\t%s\t%d\t%c\n", i + 1, groupList[i], i, joint[i]);
+                }
+                if (groupCount == 0) {
+                    printf("<NIL>\n");
                 }
                 break;
             }
@@ -199,7 +227,7 @@ int main(int argc, char *argv[]) {
                 int groupChoice;
                 printf("So, which group do you want to join? (Enter groupID): ");
                 scanf("%d", &groupChoice);
-                joinGroup(msgqid, groupChoice, msgqid_rcv);
+                joinGroup(msgqid, groupChoice, msgqid_rcv, user_id);
                 break;
             }
             case 4: {
@@ -209,12 +237,14 @@ int main(int argc, char *argv[]) {
                 scanf("%d", &senderID);
                 printf("Enter message you wish to send: ");
                 char msgText[MAX_MSG_SIZE];
-                scanf("%s", msgText);
+                getc(stdin);
+                fgets(msgText, MAX_MSG_SIZE, stdin);
+                // scanf("%[^\n]%*c", msgText);
                 printf("Set auto delete <T> option (0 for none): ");
                 int autoDel;
                 scanf("%d", &autoDel);
 
-                sendPrivateMessage(msgqid, senderID, msgText, autoDel);
+                sendPrivateMessage(msgqid, senderID, msgText, autoDel, user_id);
 
                 break;
             }
@@ -226,12 +256,14 @@ int main(int argc, char *argv[]) {
 
                 printf("Enter message you wish to send: ");
                 char msgText[MAX_MSG_SIZE];
-                scanf("%s", msgText);
+                getc(stdin);
+                fgets(msgText, MAX_MSG_SIZE, stdin);
+                // scanf("%[^\n]%*c", msgText);
 
-                printf("Set auto delete <T> option (0 for none)");
+                printf("Set auto delete <T> option (0 for none): ");
                 int autoDel;
                 scanf("%d", &autoDel);
-                sendGroupMessage(msgqid, groupChoice, msgText, autoDel);
+                sendGroupMessage(msgqid, groupChoice, msgText, autoDel, user_id);
 
                 break;
             }
