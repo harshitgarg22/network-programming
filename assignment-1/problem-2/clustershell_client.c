@@ -37,6 +37,8 @@ Assumptions:
 #include <unistd.h>
 #include <ctype.h>
 #include <signal.h>
+#include <pwd.h>
+#include <sys/types.h>
 
 ////////////////////////////////////////////
 // Constants
@@ -49,15 +51,15 @@ Assumptions:
 // size of header of messages (according to message format)
 #define HEADER_SIZE 6
 // maximum number of piped commands in a big main command sent by a node for distributed execution
-#define MAX_NUMBER_OF_PIPED_COMMANDS 10
+#define MAX_NUMBER_OF_PIPED_COMMANDS 30
 // path to config file
 #define CONFIG_PATH "config"
 // max size of line in config file
-#define MAX_SIZE_OF_LINE_IN_CONFIG 25
+#define MAX_SIZE_OF_LINE_IN_CONFIG 30
 // the port on which client runs its executioner process - should be same in client and server code
 #define CLIEX_PORT 12345
 // this goes in the listen() call
-#define MAX_CONNECTION_REQUESTS_IN_QUEUE 10
+#define MAX_CONNECTION_REQUESTS_IN_QUEUE 30
 
 
 ////////////////////////////////////////////
@@ -99,7 +101,6 @@ void sigusr1_handler(int signum){
 */
 char* execute_on_current_node(char* input, char* command){
     char* output = NULL;
-    printf("received command: %s, input: %s\n", command, input);
     
     // handling cd command
     if (command[0] == 'c' && command[1] == 'd' && command[2] == ' '){
@@ -180,6 +181,7 @@ char* get_header_str(char* co, int size){
     The parent process calls this function to handle the shell
 */
 void shell_handler(int serv_fd){
+
     while (true) {
         cyan();
         printf("\n[shell]-> ");   // bash style prompt
@@ -231,7 +233,6 @@ void shell_handler(int serv_fd){
             exit(1);
         }
         output_hdr[HEADER_SIZE] = '\0';
-        printf ("output header received: %s\n", output_hdr);
 
         // read the rest of the output received as response
         char* output = NULL;
@@ -266,6 +267,8 @@ void shell_handler(int serv_fd){
     It creates a new socket, binds it to CLIEX_PORT, and takes commands from the server for execution
 */
 void request_handler(){
+    
+
     // bind a socket and start listening on it
     int cliex_sock = socket (PF_INET, SOCK_STREAM, IPPROTO_TCP);
     struct sockaddr_in cliex_addr;
@@ -290,20 +293,20 @@ void request_handler(){
         if (bytes_read < 0){
             perror ("read");
             kill(getppid(), SIGUSR1);
+            close (cliex_sock);
             exit(1);
         }
         cmd_hdr[HEADER_SIZE] = '\0';
-        printf ("cmd_header: %s\n", cmd_hdr);
         // read input header
         char* inp_hdr = malloc((1 + HEADER_SIZE) * sizeof(char));
         bytes_read = read (serv_sock, inp_hdr, HEADER_SIZE);
         if (bytes_read < 0){
             perror ("read");
             kill(getppid(), SIGUSR1);
+            close (cliex_sock);
             exit(1);
         }
         inp_hdr[HEADER_SIZE] = '\0';
-        printf ("inp_header: %s\n", inp_hdr);
         // read the input from socket
         char* inp = NULL;
         if (inp_hdr[0] == 'i'){
@@ -319,9 +322,9 @@ void request_handler(){
         else {
             printf ("\nPossible application or network error detected. Exiting application.\n");
             kill(getppid(), SIGUSR1);
+            close (cliex_sock);
             exit(1);
         }
-        printf ("inp: %s\n", inp);
         // read the commad from socket
         char* cmd = NULL;
         if (cmd_hdr[0] == 'c'){
@@ -336,9 +339,9 @@ void request_handler(){
         else {
             printf ("\nPossible application or network error detected. Exiting application.\n");
             kill(getppid(), SIGUSR1);
+            close (cliex_sock);
             exit(1);
         }
-        printf ("cmd: %s\n", cmd);
         // execute command on this machine, with the given input and get the output
         char* output = NULL;
         output = execute_on_current_node(inp, cmd);
@@ -353,14 +356,15 @@ void request_handler(){
             perror ("write");
             printf ("Exiting application.\n");
             kill(getppid(), SIGUSR1);
+            close (cliex_sock);
             exit(1);
         }
         if (bytes_sent < strlen(msg)){
             printf ("\nUnable to send the complete output to server. Possible network error. Exiting application.\n");
             kill(getppid(), SIGUSR1);
+            close (cliex_sock);
             exit(1);
         }
-        printf ("output sent: %s\n", msg);
         free (inp);
         free (inp_hdr);
         free (cmd);
@@ -368,7 +372,7 @@ void request_handler(){
         close (serv_sock);
 
     }
-
+    close (cliex_sock);
     // handle accepted connections
 }
 
@@ -377,6 +381,21 @@ void request_handler(){
     Connects to server and creates the child process to handle incoming commands, while parent handles the shell
 */
 int main (int argc, char* argv[]) {
+
+    //change directory to home directory of currently signed in user
+    struct passwd *pass = (getpwuid(getuid()));
+    char* login_name = pass->pw_name;
+    if (login_name == NULL){
+        printf("Couldn't access login username. Exiting.\n");
+        exit(1);
+    }
+    printf("Login detected: %s\n", login_name);
+    char* home_dir = malloc ((6 + strlen(login_name)) * sizeof(char));
+    sprintf(home_dir, "/home/%s", login_name);
+    if (chdir (home_dir) < 0){
+        perror("chdir");
+        printf("Couldn't change directory.\n");
+    }
 
     // register child / parent killer
     signal(SIGUSR1, sigusr1_handler);
