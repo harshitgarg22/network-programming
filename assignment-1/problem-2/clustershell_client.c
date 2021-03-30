@@ -1,28 +1,26 @@
 /*
-Clustershell client protocol:
+Clustershell client operation:
 1. Client is opened on any machine that wishes to be part of the cluster
-2. Client connects to server on TCP
+2. Client connects to server on TCP, and the server IP is specified as a preprocessing directive in the client and server code (SERV_ADDRESS)
 3. Client sends command to server, and server coordinates the connected clients to execute the command.
-4. Client receives final output to the client which sent the command
+4. Client receives final output to the client which sent the command.
+5. There are two processes: one which handles the shell with the client, and one which handles the incoming commands from the server for this client.
+6. Each of the two processes has its own TCP connection to the server
 
 Message Design:
-6 digit header + message, as follows:
-To server: [c/o][mlength][command/output string]
-To client: [c/o][mlength][(if c) i][(if c)ilength][input string][command/output string]
-c - command
-o - output
-mlength - 5 digit number signifying length of command/output string
-(only if command to client) i - input 
-(only if command to client) ilength - 5 digit number, length of input string
+Command messages from shell to server: 6 character command header + command
+Command messages to from server to client: 6 character command header + 6 digit input header + input + command
+Output messages: 6 character header + output 
+
+The first letter of the header is c/o/i for command/output/input
+The next 5 characters specify the length of the corresponding transmission
 
 Assumptions:
 1. All clients listed in the config file connect in the beginning itself and none of them leave before all commands are over
 2. There are no commands that require manual user input from the shell (stdin)
-3. Commands and outputs are of maximum string length 99999 include all ending characters and newlines. 
-(If output is of greater length, then it will be cutoff at that point.)
+3. Commands, inputs and outputs are of maximum string length 99999 including all ending characters and newlines.
 4. Nodes are named as n1, n2, n3, ... nN.
-5. Nodes are listed in order in config file and no number is missing
-
+5. Nodes are listed in order in config file and no node number is missing
 */
 
 
@@ -46,7 +44,7 @@ Assumptions:
 
 // server address
 #define SERV_ADDRESS "127.0.0.1"
-// server port
+// server port - should be same in client and server code
 #define SERV_PORT 12038
 // size of header of messages (according to message format)
 #define HEADER_SIZE 6
@@ -56,7 +54,7 @@ Assumptions:
 #define CONFIG_PATH "config"
 // max size of line in config file
 #define MAX_SIZE_OF_LINE_IN_CONFIG 25
-// the port on which client runs its executioner process
+// the port on which client runs its executioner process - should be same in client and server code
 #define CLIEX_PORT 12345
 // this goes in the listen() call
 #define MAX_CONNECTION_REQUESTS_IN_QUEUE 10

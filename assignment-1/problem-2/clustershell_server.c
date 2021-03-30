@@ -1,9 +1,9 @@
 /*
 Clustershell server protocol:
-1. Server is run on 1 pre selected IP
-2. Server keeps waiting for connection from clients, and maintains a list of connected clients
-3. Upon recieving a command from any client, it coordinates the connected machines to execute it
-4. Returns final output to the client
+1. Server is run on any one machine. All clients must specify the IP address of the server as a preprocessing directive in the client code (SERV_ADDRESS)
+2. In the beginning all the clients listed in the config file connect to the server.
+3. Upon recieving a command from any client, it connects to the specified machines and sends the required commands and inputs to those commands to those nodes.
+4. Returns final output to the client that initially sent the command
 
 Message Design:
 6 digit header + message, as follows:
@@ -15,14 +15,20 @@ mlength - 5 digit number signifying length of command/output string
 (only if command to client) i - input 
 (only if command to client) ilength - 5 digit number, length of input string
 
+Message Design:
+Command messages from shell to server: 6 character command header + command
+Command messages to from server to client: 6 character command header + 6 digit input header + input + command
+Output messages: 6 character header + output 
+
+The first letter of the header is c/o/i for command/output/input
+The next 5 characters specify the length of the corresponding transmission
+
 Assumptions:
 1. All clients listed in the config file connect in the beginning itself and none of them leave before all commands are over
 2. There are no commands that require manual user input from the shell (stdin)
-3. Commands and outputs are of maximum string length 99999 include all ending characters and newlines. 
-(If output is of greater length, then it will be cutoff at that point.)
+3. Commands, inputs and outputs are of maximum string length 99999 including all ending characters and newlines.
 4. Nodes are named as n1, n2, n3, ... nN.
-5. Nodes are listed in order in config file and no number is missing
-
+5. Nodes are listed in order in config file and no node number is missing
 */
 
 ////////////////////////////////////////////
@@ -53,13 +59,10 @@ Assumptions:
 #define HEADER_SIZE 6
 // maximum number of piped commands in a big main command sent by a node for distributed execution
 #define MAX_NUMBER_OF_PIPED_COMMANDS 10
-// path to config file
-#define CONFIG_PATH "config"
 // max size of line in config file
 #define MAX_SIZE_OF_LINE_IN_CONFIG 25
 // the port on which client runs its executioner process
 #define CLIEX_PORT 12345
-
 
 ////////////////////////////////////////////
 // Data Structures
@@ -96,6 +99,10 @@ typedef struct node_list{
     int num;
     char* ip[MAX_NUM_OF_CONNECTED_CLIENTS];
 }NODE_LIST;
+
+// path to config file
+char* CONFIG_PATH = "config";
+
 
 ////////////////////////////////////////////
 // Functions
@@ -257,7 +264,6 @@ void free_parsed_commands(PARSED_COMMANDS cmds){
 
 /*
     execute the given command on its node and return the output
-    TODO: Add support for n*
 */
 char* execute_on_remote_node(COMMAND cmd, CONNECTED_CLIENTS clients) {
     // if the command of the n* kind, call execute_on_remote_node with modified command for all the clients and return the concatenated output
@@ -364,7 +370,13 @@ char* execute_on_remote_node(COMMAND cmd, CONNECTED_CLIENTS clients) {
     then returns output to the requesting node.
 */
 int main(int argc, char* argv[]){
-    
+    // get config file path from the user
+    printf ("Please enter the path to the config file:\n");
+    size_t n = 0;
+    getline (&CONFIG_PATH, &n, stdin);
+    n = strlen(CONFIG_PATH);
+    CONFIG_PATH[n-1] = '\0';
+
     // read the config file into the nodelist structure
     NODE_LIST nodelist = get_nodelist_from_config (CONFIG_PATH);
 
@@ -390,7 +402,7 @@ int main(int argc, char* argv[]){
 
     // find total number of clients
     int num_of_clients = nodelist.num;
-    printf ("num_of_clients: %d\n", num_of_clients);
+    // printf ("num_of_clients: %d\n", num_of_clients);
     // accept connections from shell processes of all the clients and fill details in the client list structure
     for (int i = 0; i < num_of_clients; i++) {
         socklen_t sizereceived = sizeof(clients.list[clients.num].client_addr);
