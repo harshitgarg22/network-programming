@@ -6,14 +6,12 @@ Clustershell server protocol:
 4. Returns final output to the client that initially sent the command
 
 Message Design:
-6 digit header + message, as follows:
-To server: [c/o][mlength][command/output string]
-To client: [c/o][mlength][(if c) i][(if c)ilength][input string][command/output string]
-c - command
-o - output
-mlength - 5 digit number signifying length of command/output string
-(only if command to client) i - input 
-(only if command to client) ilength - 5 digit number, length of input string
+Command messages from shell to server: 6 character command header + command
+Command messages to from server to client: 6 character command header + 6 digit input header + input + command
+Output messages: 6 character header + output 
+
+The first letter of the header is c/o/i for command/output/input
+The next 5 characters specify the length of the corresponding transmission
 
 Message Design:
 Command messages from shell to server: 6 character command header + command

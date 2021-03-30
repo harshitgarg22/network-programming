@@ -1,6 +1,6 @@
 /*
 Clustershell client operation:
-1. Client is opened on any machine that wishes to be part of the cluster
+1. Client is run on all machines that are listed in the config file
 2. Client connects to server on TCP, and the server IP is specified as a preprocessing directive in the client and server code (SERV_ADDRESS)
 3. Client sends command to server, and server coordinates the connected clients to execute the command.
 4. Client receives final output to the client which sent the command.
