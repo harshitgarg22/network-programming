@@ -20,7 +20,8 @@ typedef enum msg_intent {
     SEND_PVT_MSG,
     SEND_GRP_MSG,
     RCV_PVT_MSG,
-    RCV_GRP_MSG
+    RCV_GRP_MSG,
+    JOIN_SERVER
 } msg_intent;
 
 typedef struct create_group {
