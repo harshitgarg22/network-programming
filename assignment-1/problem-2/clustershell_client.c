@@ -1,28 +1,26 @@
 /*
-Clustershell client protocol:
-1. Client is opened on any machine that wishes to be part of the cluster
-2. Client connects to server on TCP
+Clustershell client operation:
+1. Client is run on all machines that are listed in the config file
+2. Client connects to server on TCP, and the server IP is specified as a preprocessing directive in the client and server code (SERV_ADDRESS)
 3. Client sends command to server, and server coordinates the connected clients to execute the command.
-4. Client receives final output to the client which sent the command
+4. Client receives final output to the client which sent the command.
+5. There are two processes: one which handles the shell with the client, and one which handles the incoming commands from the server for this client.
+6. Each of the two processes has its own TCP connection to the server
 
 Message Design:
-6 digit header + message, as follows:
-To server: [c/o][mlength][command/output string]
-To client: [c/o][mlength][(if c) i][(if c)ilength][input string][command/output string]
-c - command
-o - output
-mlength - 5 digit number signifying length of command/output string
-(only if command to client) i - input 
-(only if command to client) ilength - 5 digit number, length of input string
+Command messages from shell to server: 6 character command header + command
+Command messages to from server to client: 6 character command header + 6 digit input header + input + command
+Output messages: 6 character header + output 
+
+The first letter of the header is c/o/i for command/output/input
+The next 5 characters specify the length of the corresponding transmission
 
 Assumptions:
 1. All clients listed in the config file connect in the beginning itself and none of them leave before all commands are over
 2. There are no commands that require manual user input from the shell (stdin)
-3. Commands and outputs are of maximum string length 99999 include all ending characters and newlines. 
-(If output is of greater length, then it will be cutoff at that point.)
+3. Commands, inputs and outputs are of maximum string length 99999 including all ending characters and newlines.
 4. Nodes are named as n1, n2, n3, ... nN.
-5. Nodes are listed in order in config file and no number is missing
-
+5. Nodes are listed in order in config file and no node number is missing
 */
 
 
@@ -39,6 +37,8 @@ Assumptions:
 #include <unistd.h>
 #include <ctype.h>
 #include <signal.h>
+#include <pwd.h>
+#include <sys/types.h>
 
 ////////////////////////////////////////////
 // Constants
@@ -46,20 +46,20 @@ Assumptions:
 
 // server address
 #define SERV_ADDRESS "127.0.0.1"
-// server port
+// server port - should be same in client and server code
 #define SERV_PORT 12038
 // size of header of messages (according to message format)
 #define HEADER_SIZE 6
 // maximum number of piped commands in a big main command sent by a node for distributed execution
-#define MAX_NUMBER_OF_PIPED_COMMANDS 10
+#define MAX_NUMBER_OF_PIPED_COMMANDS 30
 // path to config file
 #define CONFIG_PATH "config"
 // max size of line in config file
-#define MAX_SIZE_OF_LINE_IN_CONFIG 25
-// the port on which client runs its executioner process
+#define MAX_SIZE_OF_LINE_IN_CONFIG 30
+// the port on which client runs its executioner process - should be same in client and server code
 #define CLIEX_PORT 12345
 // this goes in the listen() call
-#define MAX_CONNECTION_REQUESTS_IN_QUEUE 10
+#define MAX_CONNECTION_REQUESTS_IN_QUEUE 30
 
 
 ////////////////////////////////////////////
@@ -101,7 +101,6 @@ void sigusr1_handler(int signum){
 */
 char* execute_on_current_node(char* input, char* command){
     char* output = NULL;
-    printf("received command: %s, input: %s\n", command, input);
     
     // handling cd command
     if (command[0] == 'c' && command[1] == 'd' && command[2] == ' '){
@@ -182,6 +181,7 @@ char* get_header_str(char* co, int size){
     The parent process calls this function to handle the shell
 */
 void shell_handler(int serv_fd){
+
     while (true) {
         cyan();
         printf("\n[shell]-> ");   // bash style prompt
@@ -233,7 +233,6 @@ void shell_handler(int serv_fd){
             exit(1);
         }
         output_hdr[HEADER_SIZE] = '\0';
-        printf ("output header received: %s\n", output_hdr);
 
         // read the rest of the output received as response
         char* output = NULL;
@@ -268,6 +267,8 @@ void shell_handler(int serv_fd){
     It creates a new socket, binds it to CLIEX_PORT, and takes commands from the server for execution
 */
 void request_handler(){
+    
+
     // bind a socket and start listening on it
     int cliex_sock = socket (PF_INET, SOCK_STREAM, IPPROTO_TCP);
     struct sockaddr_in cliex_addr;
@@ -292,20 +293,20 @@ void request_handler(){
         if (bytes_read < 0){
             perror ("read");
             kill(getppid(), SIGUSR1);
+            close (cliex_sock);
             exit(1);
         }
         cmd_hdr[HEADER_SIZE] = '\0';
-        printf ("cmd_header: %s\n", cmd_hdr);
         // read input header
         char* inp_hdr = malloc((1 + HEADER_SIZE) * sizeof(char));
         bytes_read = read (serv_sock, inp_hdr, HEADER_SIZE);
         if (bytes_read < 0){
             perror ("read");
             kill(getppid(), SIGUSR1);
+            close (cliex_sock);
             exit(1);
         }
         inp_hdr[HEADER_SIZE] = '\0';
-        printf ("inp_header: %s\n", inp_hdr);
         // read the input from socket
         char* inp = NULL;
         if (inp_hdr[0] == 'i'){
@@ -321,9 +322,9 @@ void request_handler(){
         else {
             printf ("\nPossible application or network error detected. Exiting application.\n");
             kill(getppid(), SIGUSR1);
+            close (cliex_sock);
             exit(1);
         }
-        printf ("inp: %s\n", inp);
         // read the commad from socket
         char* cmd = NULL;
         if (cmd_hdr[0] == 'c'){
@@ -338,9 +339,9 @@ void request_handler(){
         else {
             printf ("\nPossible application or network error detected. Exiting application.\n");
             kill(getppid(), SIGUSR1);
+            close (cliex_sock);
             exit(1);
         }
-        printf ("cmd: %s\n", cmd);
         // execute command on this machine, with the given input and get the output
         char* output = NULL;
         output = execute_on_current_node(inp, cmd);
@@ -355,14 +356,15 @@ void request_handler(){
             perror ("write");
             printf ("Exiting application.\n");
             kill(getppid(), SIGUSR1);
+            close (cliex_sock);
             exit(1);
         }
         if (bytes_sent < strlen(msg)){
             printf ("\nUnable to send the complete output to server. Possible network error. Exiting application.\n");
             kill(getppid(), SIGUSR1);
+            close (cliex_sock);
             exit(1);
         }
-        printf ("output sent: %s\n", msg);
         free (inp);
         free (inp_hdr);
         free (cmd);
@@ -370,7 +372,7 @@ void request_handler(){
         close (serv_sock);
 
     }
-
+    close (cliex_sock);
     // handle accepted connections
 }
 
@@ -379,6 +381,21 @@ void request_handler(){
     Connects to server and creates the child process to handle incoming commands, while parent handles the shell
 */
 int main (int argc, char* argv[]) {
+
+    //change directory to home directory of currently signed in user
+    struct passwd *pass = (getpwuid(getuid()));
+    char* login_name = pass->pw_name;
+    if (login_name == NULL){
+        printf("Couldn't access login username. Exiting.\n");
+        exit(1);
+    }
+    printf("Login detected: %s\n", login_name);
+    char* home_dir = malloc ((6 + strlen(login_name)) * sizeof(char));
+    sprintf(home_dir, "/home/%s", login_name);
+    if (chdir (home_dir) < 0){
+        perror("chdir");
+        printf("Couldn't change directory.\n");
+    }
 
     // register child / parent killer
     signal(SIGUSR1, sigusr1_handler);
