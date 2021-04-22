@@ -4,6 +4,7 @@
 #define MAX_CMD_LEN             20          /* Maximum length of command that user can enter on prompt */
 #define SMALL_STR_LEN           20          /* Maximum length of any general string taken as input */
 #define LARGE_STR_LEN           512
+#define MAX_FILES               50          /* Maximum number of files that a peer can keep downloaded locally */
 
 /* Commands */
 #define __SPACE__ " "

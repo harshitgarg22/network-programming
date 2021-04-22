@@ -11,6 +11,27 @@
 #include "constants.h"
 
 /**
+ * All message types that a peer can send/receive 
+ * Responses to any message depend on this field 
+ */
+enum mtype { 
+    FILE_ADVERTISE,
+    FILE_ADVERTISE_FWD,
+    FILE_REQUEST,
+    FILE_REQUEST_FWD,
+    POLL
+};
+
+/**
+ * Basic message that is used for any multicast communication 
+ * between members of a group
+ */
+typedef struct message {
+    enum mtype msg_type;
+    void *msg_buff;
+} peer_msg;
+
+/**
  * Data describing all the groups that the user is aware of. 
  * These should ideally be the same for all peers on the LAN
  * because any group creation event is broadcasted to all peers
@@ -25,12 +46,31 @@ typedef struct {
     bool is_joined;
 } comm_grp;
 
-int grp_count;                          /* Number of grps in the database*/
-comm_grp grp_db[MAX_GRPS_ALLOWED];      /* list of all comm_grp structs */
-int bcastfd;
-struct sockaddr_in bcastAddr; 
+/* ---------------- Properties of a peer --------------------------- */
 
-int return_grp_key(char *grp_name) {
+int grp_count;                          /* Number of grps in the database*/
+comm_grp grp_db[MAX_GRPS_ALLOWED];      /* List of all comm_grp structs */
+int bcastfd;                            /* Socket to send broadcastcast message to all members on LAN*/
+struct sockaddr_in bcastAddr;           /* sockaddr struct to send broadcastcast message to all members on LAN */
+char *files_available[MAX_FILES];       /* List of filenames available with this peer */
+
+/* ----------------------------------------------------------------- */
+
+/**
+ * general error handling
+ */
+void handle_index_err(int i, char *grp_name) {
+    if (i == -1) {
+        fprintf(stderr,"Could not find group <%s> on this LAN\n", grp_name);
+        exit(EXIT_FAILURE);
+    }
+}
+
+/**
+ * Utility functin to retrieve the index of grp_name
+ * from the grp_db array 
+ */
+int get_grp_key(char *grp_name) {
     if (!grp_name) return -1;
     for (int i = 0; i < grp_count; i++) {
         if (strcmp(grp_name, grp_db[i].grp_name) == 0) {
@@ -40,6 +80,10 @@ int return_grp_key(char *grp_name) {
     return -1;
 }
 
+/**
+ * Creates a new group on the LAN and broadcasts the created
+ * group's information to all peers on the LAN
+ */ 
 int create_grp(char *grp_name, char *mcast_ip, char *grp_port) {
     grp_db[grp_count].grp_name = strdup(grp_name);
     strcpy(grp_db[grp_count].mcast_group_addr, mcast_ip);
@@ -86,26 +130,45 @@ int create_grp(char *grp_name, char *mcast_ip, char *grp_port) {
     grp_db[grp_count].send_addr = sendAddr;
     grp_db[grp_count].recv_addr = rcvAddr;
 
-    broadcast_grp(grp_db[grp_count]);
-
-    grp_count += 1;
-}
-
-int broadcast_grp(comm_grp newgrp) {
+    comm_grp newgrp = grp_db[grp_count];
     int sent = sendto(bcastfd, &newgrp, sizeof(newgrp), 0, (struct sockaddr*)&bcastAddr, sizeof(bcastAddr));
     if (sent < 0) {
-        perror("Could not send new grp as broadcast\n");
+        fprintf(stderr, "Could not send new grp as broadcast\n");
+        return -1;
+    }
+    grp_count += 1;
+    return 0;
+}
+
+/**
+ * Send the struct pointed to by 'buff' to all members of the
+ * group 'grp_name'
+ */
+int notify_grp(char *grp_name, peer_msg msg) {
+    int index = get_grp_key(grp_name);
+    handle_index_err(index, grp_name);
+
+    if (msg.msg_type == POLL) {
+        if (!grp_db[index].is_joined) {
+            printf("You are not a member of this grp\n");
+            printf("Could not create poll\n");
+            return -1;
+        }
+    }
+
+    int sockfd = grp_db[index].send_sockfd; 
+    struct sockaddr_in addr = grp_db[index].send_addr;
+
+    if (sendto(sockfd, &msg, sizeof(msg), 0, (struct sockaddr*)&addr, sizeof(addr)) < 0) {
         return -1;
     }
     return 0;
 }
 
 int search_for_grp(char *grp_name) {
-    int index = return_grp_key(grp_name);
-    if (index == -1) {
-        printf("Could not find group <%s> on this LAN\n", grp_name);
-        return -1;
-    }
+    int index = get_grp_key(grp_name);
+    handle_index_err(index, grp_name);
+
     int port = ntohs(grp_db[index].send_addr.sin_port);
     printf("Found grp called <%s>\n", grp_name);
     printf("Multicast IP -> %s\n", grp_db[index].mcast_group_addr);
@@ -115,11 +178,8 @@ int search_for_grp(char *grp_name) {
 }
 
 int join_grp(char *grp_name) {
-    int index = return_grp_key(grp_name);
-    if (index == -1) {
-        printf("Could not find grp called %s\n", grp_name);
-        return -1;
-    }
+    int index = get_grp_key(grp_name);
+    handle_index_err(index, grp_name);
     
     if (grp_db[index].is_joined) {
         printf("You're already a member of this group\n");
@@ -144,11 +204,8 @@ int join_grp(char *grp_name) {
 }
 
 int leave_grp(char *grp_name) {
-    int index = return_grp_key(grp_name);
-    if (index == -1) {
-        printf("Could not find any grp called %s\n", grp_name);
-        return -1;
-    }
+    int index = get_grp_key(grp_name);
+    handle_index_err(index, grp_name);
     
     if (!grp_db[index].is_joined) {
         printf("You were never a member of this group\n");
@@ -173,24 +230,6 @@ int leave_grp(char *grp_name) {
 }
 
 int create_poll(char *grp_name) {
-    int sendfd, recvfd;
-    struct sockaddr_in sa, ra;
-    int index = return_grp_key(grp_name);
-    if (index == -1) {
-        printf("No such grp exists\n");
-        return -1;
-    }
-    if (!grp_db[index].is_joined) {
-        printf("You are not a member of this grp\n");
-        printf("Could not create poll\n");
-        return -1;
-    }
-    else {
-        sendfd = grp_db[index].send_sockfd;
-        recvfd = grp_db[index].recv_sockfd;
-        sa = grp_db[index].send_addr;
-        ra = grp_db[index].recv_addr;
-    }
 
     char poll_question[LARGE_STR_LEN];
     fprintf(stderr, "Enter a yes/no question for the poll: ");
@@ -200,32 +239,33 @@ int create_poll(char *grp_name) {
     printf("You created a new poll!\n");
     printf("Sending poll info to all members of grp <%s>\n", grp_name);
 
-    pid_t pid = fork();
-    if (pid == 0) {
-        printf("Waiting for responses...\n");
-        int yes = 0, no = 0, n;
-        char recvBuff[SMALL_STR_LEN];
-        for ( ; ; ) {
-            n = recvfrom(recvfd, recvBuff, SMALL_STR_LEN, 0, (struct sockaddr*)&ra, sizeof(ra));
-            recvBuff[n] = 0;
-            if (n < 0) {
-                printf("Could not receive response from peer\n");
-                continue;
-            }
-            if (strcmp(recvBuff, "yes") == 0) yes++;
-            else if (strcmp(recvBuff, "no") == 0) no++;
-            else printf("Invalid response from peer\n");
-        }
-
-        printf("Poll complete!\n");
-        printf("These are the results: YES %d | NO %d\n\n", yes, no);
-        exit(EXIT_SUCCESS);
-    }
-
+    peer_msg msg;
+    notify_grp(grp_name, )
     if (sendto(sendfd, poll_question, strlen(poll_question), 0, (struct sockaddr*)&sa, sizeof(sa)) < 0) {
-        perror("Error sending poll to grp due to sendto()\n");
+        fprintf(stderr, "Error sending poll to grp due to sendto()\n");
         return -1;
     }
+    // pid_t pid = fork();
+    // if (pid == 0) {
+    //     printf("Waiting for responses...\n");
+    //     int yes = 0, no = 0, n;
+    //     char recvBuff[SMALL_STR_LEN];
+    //     for ( ; ; ) {
+    //         n = recvfrom(recvfd, recvBuff, SMALL_STR_LEN, 0, (struct sockaddr*)&ra, sizeof(ra));
+    //         recvBuff[n] = 0;
+    //         if (n < 0) {
+    //             printf("Could not receive response from peer\n");
+    //             continue;
+    //         }
+    //         if (strcmp(recvBuff, "yes") == 0) yes++;
+    //         else if (strcmp(recvBuff, "no") == 0) no++;
+    //         else printf("Invalid response from peer\n");
+    //     }
+
+    //     printf("Poll complete!\n");
+    //     printf("These are the results: YES %d | NO %d\n\n", yes, no);
+    //     exit(EXIT_SUCCESS);
+    // }
 }
 
 int main(int argc, const char *argv[]) {
@@ -242,7 +282,7 @@ int main(int argc, const char *argv[]) {
 
     int bcastEnable = 1;
     if (setsockopt(bcastfd, SOL_SOCKET, SO_BROADCAST, &bcastEnable, sizeof(bcastEnable)) < 0) {
-        perror("Could not set broadcast option\n");
+        fprintf(stderr, "Could not set broadcast option\n");
         exit(EXIT_FAILURE);
     }
 
