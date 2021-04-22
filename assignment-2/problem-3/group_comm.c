@@ -5,9 +5,16 @@
 #include <unistd.h>
 #include <string.h>
 #include <stdbool.h>
+#include <signal.h>
+#include <setjmp.h>
 
 #include "constants.h"
 
+/**
+ * Data describing all the groups that the user is aware of. 
+ * These should ideally be the same for all peers on the LAN
+ * because any group creation event is broadcasted to all peers
+ */
 typedef struct {
     char *grp_name;
     char mcast_group_addr[MAX_ADDR_LEN];
@@ -18,14 +25,10 @@ typedef struct {
     bool is_joined;
 } comm_grp;
 
-
-/**
- * Fields describing all the groups that the user is aware of. 
- * These should ideally be the same for all peers on the LAN
- * because any group creation event is broadcasted to all peers
- */
 int grp_count;                          /* Number of grps in the database*/
 comm_grp grp_db[MAX_GRPS_ALLOWED];      /* list of all comm_grp structs */
+int bcastfd;
+struct sockaddr_in bcastAddr; 
 
 int return_grp_key(char *grp_name) {
     if (!grp_name) return -1;
@@ -37,68 +40,136 @@ int return_grp_key(char *grp_name) {
     return -1;
 }
 
-int create_grp(char *grp_name) {
-    comm_grp *new_grp;
+int create_grp(char *grp_name, char *mcast_ip, char *grp_port) {
+    grp_db[grp_count].grp_name = strdup(grp_name);
+    strcpy(grp_db[grp_count].mcast_group_addr, mcast_ip);
+
+    struct sockaddr_in rcvAddr, sendAddr;
+    int len = sizeof(rcvAddr);
+    memset(&rcvAddr, 0, len);
+    rcvAddr.sin_family = AF_INET;
+    rcvAddr.sin_port = htons(atoi(grp_port));
+    rcvAddr.sin_addr.s_addr = htonl(INADDR_ANY);
+
+    sendAddr = rcvAddr;
+    sendAddr.sin_addr.s_addr = inet_addr(mcast_ip);
+
+    int sendfd;
+    if ((sendfd = socket(AF_INET, SOCK_DGRAM, 0)) < 0) {
+        fprintf(stderr, "Error creating send socket\n");
+        return -1;
+    }
+    int useSame = 1;
+    if (setsockopt(sendfd, SOL_SOCKET, SO_REUSEADDR, &useSame, sizeof(useSame)) < 0) {
+        fprintf(stderr, "Error creating send socket due to setsockopt()\n");
+        return -1;
+    }
+
+    int recvfd;
+    if ((recvfd = socket(AF_INET, SOCK_DGRAM, 0)) < 0) {
+        fprintf(stderr, "Error creating recv socket\n");
+        return -1;
+    }
+    if (bind(recvfd, (struct sockaddr*)&rcvAddr, len) < 0) {
+        fprintf(stderr, "Error binding socket\n");
+        return -1;
+    }
+
+    if (setsockopt(recvfd, IPPROTO_IP, IP_MULTICAST_LOOP, &useSame, sizeof(useSame)) < 0) {
+        fprintf(stderr, "Error creating recv socket due to setsockopt()\n");
+        return -1;
+    }
+
+    /* add this struct to the db */
+    grp_db[grp_count].send_sockfd = sendfd;
+    grp_db[grp_count].recv_sockfd = recvfd;
+    grp_db[grp_count].send_addr = sendAddr;
+    grp_db[grp_count].recv_addr = rcvAddr;
+
+    broadcast_grp(grp_db[grp_count]);
+
+    grp_count += 1;
+}
+
+int broadcast_grp(comm_grp newgrp) {
+    int sent = sendto(bcastfd, &newgrp, sizeof(newgrp), 0, (struct sockaddr*)&bcastAddr, sizeof(bcastAddr));
+    if (sent < 0) {
+        perror("Could not send new grp as broadcast\n");
+        return -1;
+    }
+    return 0;
+}
+
+int search_for_grp(char *grp_name) {
+    int index = return_grp_key(grp_name);
+    if (index == -1) {
+        printf("Could not find group <%s> on this LAN\n", grp_name);
+        return -1;
+    }
+    int port = ntohs(grp_db[index].send_addr.sin_port);
+    printf("Found grp called <%s>\n", grp_name);
+    printf("Multicast IP -> %s\n", grp_db[index].mcast_group_addr);
+    printf("Multicast Grp Port -> %d\n", port);
+
+    return 0;
 }
 
 int join_grp(char *grp_name) {
-    for (int i = 0; i < grp_count; i++) {
-        if (strcmp(grp_name, grp_db[i].grp_name) == 0) {
-            // match found
-            if (grp_db[i].is_joined) {
-                printf("You're already a member of this group\n");
-                return 0;
-            }
-            else {
-                // join new grp
-                struct ip_mreq mreq;
-                mreq.imr_interface.s_addr = inet_addr(grp_db[i].mcast_group_addr);
-                mreq.imr_interface.s_addr = htonl(INADDR_ANY);  // allow kernel to choose which interface to use for the mcast grp
-
-                int sockopt;
-                // add this host as a member on the receiving socket for the group
-                if ((sockopt = setsockopt(grp_db[i].recv_sockfd, IPPROTO_IP, IP_ADD_MEMBERSHIP, &mreq, sizeof(mreq))) == -1) {
-                    printf("Could not join group **%s** due to error\n", grp_name);
-                    exit(EXIT_FAILURE);
-                }
-
-                grp_db[i].is_joined = true;
-                printf("You joined group **%s**. Welcome!\n", grp_name);
-                return 1;
-            }
-        }
+    int index = return_grp_key(grp_name);
+    if (index == -1) {
+        printf("Could not find grp called %s\n", grp_name);
+        return -1;
     }
-    printf("No group found with this name\n");
-    return -1;
+    
+    if (grp_db[index].is_joined) {
+        printf("You're already a member of this group\n");
+        return 0;
+    }
+    else {
+        // join new grp
+        struct ip_mreq mreq;
+        mreq.imr_interface.s_addr = inet_addr(grp_db[index].mcast_group_addr);
+        mreq.imr_interface.s_addr = htonl(INADDR_ANY);  // allow kernel to choose which interface to use for the mcast grp
+
+        // add this host as a member on the receiving socket for the group
+        if (setsockopt(grp_db[index].recv_sockfd, IPPROTO_IP, IP_ADD_MEMBERSHIP, &mreq, sizeof(mreq)) == -1) {
+            printf("Could not join group <%s> due to error\n", grp_name);
+            exit(EXIT_FAILURE);
+        }
+        
+        grp_db[index].is_joined = true;
+        printf("You joined group <%s>. Welcome!\n", grp_name);
+        return 0;
+    }
 }
 
 int leave_grp(char *grp_name) {
-    int num_grps = sizeof(grp_db) / sizeof(comm_grp);
-    for (int i = 0; i < num_grps; i++) {
-        if (strcmp(grp_name, grp_db[i].grp_name) == 0) {
-            if (!grp_db[i].is_joined) {
-                printf("Can't leave a grp you're not a member of, now, can you?\n");
-                return 0;
-            }
-            else {
-                struct ip_mreq mreq;
-                mreq.imr_interface.s_addr = inet_addr(grp_db[i].mcast_group_addr);
-                mreq.imr_interface.s_addr = htonl(INADDR_ANY);
-
-                int sockopt;
-                if ((sockopt = setsockopt(grp_db[i].recv_sockfd, IPPROTO_IP, IP_DROP_MEMBERSHIP, &mreq, sizeof(mreq))) == -1) {
-                    printf("Could not leave group **%s** due to error\n", grp_name);
-                    exit(EXIT_FAILURE);
-                }
-
-                grp_db[i].is_joined = false;
-                printf("You're no longer a member of group **%s**\n", grp_name);
-                return 1;
-            }
-        }
+    int index = return_grp_key(grp_name);
+    if (index == -1) {
+        printf("Could not find any grp called %s\n", grp_name);
+        return -1;
     }
-    printf("No group found with this name\n");
-    return -1;
+    
+    if (!grp_db[index].is_joined) {
+        printf("You were never a member of this group\n");
+        return 0;
+    }
+    else {
+        // join new grp
+        struct ip_mreq mreq;
+        mreq.imr_interface.s_addr = inet_addr(grp_db[index].mcast_group_addr);
+        mreq.imr_interface.s_addr = htonl(INADDR_ANY);  // allow kernel to choose which interface to use for the mcast grp
+
+        // add this host as a member on the receiving socket for the group
+        if (setsockopt(grp_db[index].recv_sockfd, IPPROTO_IP, IP_DROP_MEMBERSHIP, &mreq, sizeof(mreq)) == -1) {
+            printf("Could not leave group <%s> due to error\n", grp_name);
+            exit(EXIT_FAILURE);
+        }
+        
+        grp_db[index].is_joined = false;
+        printf("You left group <%s>. Goodbye!\n", grp_name);
+        return 0;
+    }
 }
 
 int create_poll(char *grp_name) {
@@ -134,7 +205,7 @@ int create_poll(char *grp_name) {
         printf("Waiting for responses...\n");
         int yes = 0, no = 0, n;
         char recvBuff[SMALL_STR_LEN];
-        for (;;) {
+        for ( ; ; ) {
             n = recvfrom(recvfd, recvBuff, SMALL_STR_LEN, 0, (struct sockaddr*)&ra, sizeof(ra));
             recvBuff[n] = 0;
             if (n < 0) {
@@ -158,8 +229,25 @@ int create_poll(char *grp_name) {
 }
 
 int main(int argc, const char *argv[]) {
+
+    bcastfd = socket(AF_INET, SOCK_DGRAM, 0);
+    if (bcastfd < 0) {
+        printf("Could not create broadcast socket\n");
+        exit(EXIT_FAILURE);
+    }
+
+    bcastAddr.sin_family = AF_INET;
+    bcastAddr.sin_port = htons(BCAST_PORT);
+    bcastAddr.sin_addr.s_addr = inet_addr("255.255.255.255");
+
+    int bcastEnable = 1;
+    if (setsockopt(bcastfd, SOL_SOCKET, SO_BROADCAST, &bcastEnable, sizeof(bcastEnable)) < 0) {
+        perror("Could not set broadcast option\n");
+        exit(EXIT_FAILURE);
+    }
+
     printf("List of avaiable commands:\n");
-    printf("-> create-grp <grp_name>\n");
+    printf("-> create-grp <grp_name> <mcast IP> <port>\n");
     printf("-> join <grp_name>\n");
     printf("-> leave <grp_name>\n");
     printf("-> search-grp <keyword>\n");
@@ -177,7 +265,7 @@ int main(int argc, const char *argv[]) {
         }
         cmd_buff[cmd_inp_len-1] = 0;
 
-        char *tokens[2];
+        char *tokens[4];
         char *dup_cmd = strdup(cmd_buff);
         char *token = strtok(dup_cmd, __SPACE__);
         int i = 0;
@@ -190,7 +278,7 @@ int main(int argc, const char *argv[]) {
         }
 
         if (strcmp(tokens[0], "create-grp") == 0) {
-            create_grp(tokens[1]);
+            create_grp(tokens[1], tokens[2], tokens[3]);
         }
         else if (strcmp(tokens[0], "join") == 0) {
             join_grp(tokens[1]);
