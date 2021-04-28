@@ -220,12 +220,12 @@ int main(int argc, char *argv[]) {
             sendto(pcfd, data, sizeof(data), 0, (struct sockaddr *)&pcsendaddr, sizeof(pcsendaddr));
             --numConnections;
             if (numConnectionsSoFar >= MaxRequestsPerChild) {
+                kill(getppid(), SIGCHLD);
                 printf("Flushing child %d because it exceeded maximum connection limit\n", getpid());
-                exit(0);
+                break;
             }
         }
     }
-    wait(NULL);
     while (myChildren != NULL) {
         pid_t kick = myChildren->pid;
         childData *delete = myChildren;
