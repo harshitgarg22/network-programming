@@ -631,13 +631,11 @@ int main(int argc, const char *argv[]) {
                             {
                                 // respond with yes/no
                                 handle_file_request(msg);
-                                // forward request to other grps
                             }
                             break;
                         
                         case POLL:
                             {
-                                // handle poll request
                                 printf("A member initiated a new poll in the group <%s>\n", grp_db[i].grp_name);
                                 printf("Poll Question:\n\t%s", msg.msg_buff);
                                 char response[SMALL_STR_LEN];
