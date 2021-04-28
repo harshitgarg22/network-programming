@@ -243,7 +243,7 @@ void print_rtts(char* target_ip, struct addrinfo *ai){
 				break;
 		}
 
-		printf ("%s %lf ms %lf ms %lf ms \n", target_ip, rtt1, rtt2, rtt3);
+		printf ("%s - %.3lf ms %.3lf ms %.3lf ms \n", target_ip, rtt1, rtt2, rtt3);
 	}	
 	else if (ai->ai_family == AF_INET6){
 		pid  = getpid();
@@ -317,6 +317,8 @@ void print_rtts(char* target_ip, struct addrinfo *ai){
 			if ((rtt1 = rtt_from_resp6(recvbuf, n, &tvalrecv)) > 0)
 				break;
 		}
+
+		printf ("%s - %.3lf ms %.3lf ms %.3lf ms \n", target_ip, rtt1, rtt2, rtt3);
 	}
 	else{
 		printf("unknown address family. Exiting\n");
