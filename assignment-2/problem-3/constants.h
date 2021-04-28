@@ -1,4 +1,5 @@
 #define BCAST_PORT              8080
+#define UCAST_PORT              8081
 #define MAX_ADDR_LEN            50
 #define MAX_GRPS_ALLOWED        10
 #define MAX_CMD_LEN             20          /* Maximum length of command that user can enter on prompt */
