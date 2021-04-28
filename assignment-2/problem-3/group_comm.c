@@ -1,12 +1,3 @@
-#include <stdio.h>
-#include <stdlib.h>
-#include <sys/socket.h>
-#include <arpa/inet.h>
-#include <unistd.h>
-#include <string.h>
-#include <stdbool.h>
-#include <signal.h>
-#include <setjmp.h>
 
 #include "constants.h"
 
@@ -19,16 +10,20 @@ enum mtype {
     FILE_ADVERTISE_FWD,
     FILE_REQUEST,
     FILE_REQUEST_FWD,
-    POLL
+    FILE_REQUEST_RESPONSE,
+    POLL,
+    POLL_RESPONSE
 };
 
 /**
- * Basic message that is used for any multicast communication 
+ * Basic message that is used for any communication 
  * between members of a group
  */
 typedef struct message {
     enum mtype msg_type;
-    void *msg_buff;
+    char msg_buff[LARGE_STR_LEN];
+    int flag;
+    char sender_ip[16];
 } peer_msg;
 
 /**
@@ -48,25 +43,25 @@ typedef struct {
 
 /* ---------------- Properties of a peer ----------------- */
 
-int grp_count;                          /* Number of grps in the database */
+char unicast_ip[16];                    /* Unicast IP for this peer */
+int GRP_COUNT;                          /* Number of grps in the database */
 comm_grp grp_db[MAX_GRPS_ALLOWED];      /* List of all comm_grp structs */
-int bcastfd;                            /* Socket to send broadcastcast message to all members on LAN */
-struct sockaddr_in bcastAddr;           /* sockaddr struct to send broadcastcast message to all members on LAN */
-int ucastfd;
-struct sockaddr_in ucastAddr;
-int num_files_available;                /* Number of files that the peer has locally */
+int AVAILABLE_FILE_COUNT;               /* Number of files that the peer has locally */
 char *files_available[MAX_FILES];       /* List of filenames available with this peer */
 int maxfd;
 fd_set readset, global_readset;
+sig_atomic_t to_poll = 1;
 
+int bcastfd;
+struct sockaddr_in bcast_addr;
+int ucast_sendfd;                       /* Pair of sockets used for unicast messages */
+struct sockaddr_in ucast_send_addr;
+int ucast_recvfd;
+struct sockaddr_in ucast_recv_addr;
 /* ------------------------------------------------------- */
 
-
-void handle_index_err(int i, char *grp_name) {
-    if (i == -1) {
-        fprintf(stderr,"Could not find group <%s> on this LAN\nExiting...", grp_name);
-        exit(EXIT_FAILURE);
-    }
+void poll_timeout_handler() {
+    to_poll = 1;
 }
 
 /**
@@ -82,13 +77,22 @@ void err_exit(char *call) {
  * from the grp_db array 
  */
 int get_grp_key(char *grp_name) {
-    if (!grp_name) return -1;
-    for (int i = 0; i < grp_count; i++) {
+    int index = -1;
+    if (!grp_name) {
+        fprintf(stderr, "Invalid grp name received in get_grp_key\n");
+        exit(EXIT_FAILURE);
+    }
+    for (int i = 0; i < GRP_COUNT; i++) {
         if (strcmp(grp_name, grp_db[i].grp_name) == 0) {
-            return i;
+            index = i;
+            break;
         }
     } 
-    return -1;
+    if (index == -1) {
+        fprintf(stderr,"Could not find group <%s> on this LAN\nExiting...", grp_name);
+        exit(EXIT_FAILURE);
+    }
+    return index;
 }
 
 /**
@@ -96,8 +100,8 @@ int get_grp_key(char *grp_name) {
  * group's information to all peers on the LAN
  */ 
 int create_grp(char *grp_name, char *mcast_ip, char *grp_port) {
-    grp_db[grp_count].grp_name = strdup(grp_name);
-    strcpy(grp_db[grp_count].mcast_group_addr, mcast_ip);
+    grp_db[GRP_COUNT].grp_name = strdup(grp_name);
+    strcpy(grp_db[GRP_COUNT].mcast_group_addr, mcast_ip);
 
     struct sockaddr_in rcvAddr, sendAddr;
     int len = sizeof(rcvAddr);
@@ -115,7 +119,7 @@ int create_grp(char *grp_name, char *mcast_ip, char *grp_port) {
         return -1;
     }
     int useSame = 1;
-    if (setsockopt(sendfd, SOL_SOCKET, SO_REUSEADDR, &useSame, sizeof(useSame)) < 0) {
+    if (setsockopt(sendfd, IPPROTO_IP, IP_MULTICAST_LOOP, &useSame, sizeof(useSame)) < 0) {
         err_exit("setsockopt()");
         return -1;
     }
@@ -127,29 +131,29 @@ int create_grp(char *grp_name, char *mcast_ip, char *grp_port) {
     }
     FD_SET(recvfd, &global_readset);
 
-    if (bind(recvfd, (struct sockaddr*)&rcvAddr, len) < 0) {
+    if (bind(recvfd, (__SA__*)&rcvAddr, __ADDR_LEN__) < 0) {
         err_exit("bind()");
         return -1;
     }
 
-    if (setsockopt(recvfd, IPPROTO_IP, IP_MULTICAST_LOOP, &useSame, sizeof(useSame)) < 0) {
+    if (setsockopt(recvfd, SOL_SOCKET, SO_REUSEADDR, &useSame, sizeof(useSame)) < 0) {
         err_exit("setsockopt()");
         return -1;
     }
 
     /* add this struct to the db */
-    grp_db[grp_count].send_sockfd = sendfd;
-    grp_db[grp_count].recv_sockfd = recvfd;
-    grp_db[grp_count].send_addr = sendAddr;
-    grp_db[grp_count].recv_addr = rcvAddr;
+    grp_db[GRP_COUNT].send_sockfd = sendfd;
+    grp_db[GRP_COUNT].recv_sockfd = recvfd;
+    grp_db[GRP_COUNT].send_addr = sendAddr;
+    grp_db[GRP_COUNT].recv_addr = rcvAddr;
 
-    comm_grp newgrp = grp_db[grp_count];
-    int sent = sendto(bcastfd, &newgrp, sizeof(newgrp), 0, (struct sockaddr*)&bcastAddr, sizeof(bcastAddr));
+    comm_grp newgrp = grp_db[GRP_COUNT];
+    int sent = sendto(bcastfd, &newgrp, sizeof(newgrp), 0, (__SA__*)&bcast_addr, __ADDR_LEN__);
     if (sent < 0) {
         err_exit("sendto()");
         return -1;
     }
-    grp_count += 1;
+    GRP_COUNT += 1;
     return 0;
 }
 
@@ -159,7 +163,6 @@ int create_grp(char *grp_name, char *mcast_ip, char *grp_port) {
  */
 int notify_grp(char *grp_name, peer_msg msg) {
     int index = get_grp_key(grp_name);
-    handle_index_err(index, grp_name);
 
     if (msg.msg_type == POLL) {
         if (!grp_db[index].is_joined) {
@@ -172,7 +175,8 @@ int notify_grp(char *grp_name, peer_msg msg) {
     int sockfd = grp_db[index].send_sockfd; 
     struct sockaddr_in addr = grp_db[index].send_addr;
 
-    if (sendto(sockfd, &msg, sizeof(msg), 0, (struct sockaddr*)&addr, sizeof(addr)) < 0) {
+    strcpy(msg.sender_ip, unicast_ip);
+    if (sendto(sockfd, &msg, sizeof(msg), 0, (__SA__*)&addr, __ADDR_LEN__) < 0) {
         err_exit("sendto()");
         return -1;
     }
@@ -185,7 +189,6 @@ int notify_grp(char *grp_name, peer_msg msg) {
  */ 
 int search_for_grp(char *grp_name) {
     int index = get_grp_key(grp_name);
-    handle_index_err(index, grp_name);
 
     int port = ntohs(grp_db[index].send_addr.sin_port);
     printf("Found grp called <%s>\n", grp_name);
@@ -200,7 +203,6 @@ int search_for_grp(char *grp_name) {
  */
 int join_grp(char *grp_name) {
     int index = get_grp_key(grp_name);
-    handle_index_err(index, grp_name);
     
     if (grp_db[index].is_joined) {
         printf("You're already a member of this group\n");
@@ -232,7 +234,6 @@ int join_grp(char *grp_name) {
  */
 int leave_grp(char *grp_name) {
     int index = get_grp_key(grp_name);
-    handle_index_err(index, grp_name);
     
     if (!grp_db[index].is_joined) {
         printf("You were never a member of this group\n");
@@ -270,30 +271,40 @@ int create_poll(char *grp_name) {
     printf("Sending poll info to all members of grp <%s>\n", grp_name);
 
     peer_msg msg;
-    msg.msg_buff = poll_question;
+    strcpy(msg.msg_buff,poll_question);
     msg.msg_type = POLL;
     notify_grp(grp_name, msg);
-    // pid_t pid = fork();
-    // if (pid == 0) {
-    //     printf("Waiting for responses...\n");
-    //     int yes = 0, no = 0, n;
-    //     char recvBuff[SMALL_STR_LEN];
-    //     for ( ; ; ) {
-    //         n = recvfrom(recvfd, recvBuff, SMALL_STR_LEN, 0, (struct sockaddr*)&ra, sizeof(ra));
-    //         recvBuff[n] = 0;
-    //         if (n < 0) {
-    //             printf("Could not receive response from peer\n");
-    //             continue;
-    //         }
-    //         if (strcmp(recvBuff, "yes") == 0) yes++;
-    //         else if (strcmp(recvBuff, "no") == 0) no++;
-    //         else printf("Invalid response from peer\n");
-    //     }
 
-    //     printf("Poll complete!\n");
-    //     printf("These are the results: YES %d | NO %d\n\n", yes, no);
-    //     exit(EXIT_SUCCESS);
-    // }
+    int index = get_grp_key(grp_name);
+    int recvfd = grp_db[index].recv_sockfd;
+    struct sockaddr_in recv_addr = grp_db[index].recv_addr;
+    int len = __ADDR_LEN__;
+    
+    peer_msg recvmsg;
+    if (fork() == 0) {
+        int yes = 0, no = 0;    
+        alarm(60);
+        while (to_poll) {
+            int n = recvfrom(recvfd, &recvmsg, SMALL_STR_LEN, 0, (__SA__*)&recv_addr, &len);
+            if (n < 0) {
+                err_exit("recvfrom()");
+                continue;
+            }
+            if (msg.msg_type != POLL_RESPONSE)
+                continue;
+            if (strcmp(msg.msg_buff, "yes") == 0) yes++;
+            else if (strcmp(msg.msg_buff, "no") == 0) no++;
+            else {
+                printf("Invalid response from peer\n");
+                continue;
+            }
+        }
+        to_poll = 1;
+        printf("Poll complete!\n");
+        printf("These are the results: YES %d | NO %d\n\n", yes, no);
+        exit(EXIT_SUCCESS);
+    }
+    
 }
 
 /**
@@ -307,14 +318,14 @@ int advertise_file_list() {
     msg.msg_type = FILE_ADVERTISE;
     char send_buff[LARGE_STR_LEN];
 
-    for (int i = 0; i < num_files_available; i++) {
+    for (int i = 0; i < AVAILABLE_FILE_COUNT; i++) {
         strcat(send_buff, files_available[i]);
         strcat(send_buff, __SPACE__);
     }
-    msg.msg_buff = send_buff;
+    strcpy(msg.msg_buff,send_buff);
 
     /* advertise file list to members */
-    for (int i = 0; i < grp_count; i++) {
+    for (int i = 0; i < GRP_COUNT; i++) {
         if (grp_db[i].is_joined) {
             int n = notify_grp(grp_db[i].grp_name, msg);
             if (n == -1) {
@@ -326,25 +337,99 @@ int advertise_file_list() {
     return 0;
 }
 
-// void forward_msg(peer_msg msg, char *origin_grp, char *prev_grp) {
+/**
+ * Download filename from peer with this IP
+ */ 
+int download_file(char *uploader_ip, char *filename) {
 
-// }
+}
 
+/**
+ * Send special file request message to all the groups that 
+ * the peer has joined
+ */
+void send_file_request(char *filename) {
+    peer_msg msg;
+    strcpy(msg.msg_buff,filename);
+    msg.msg_type = FILE_REQUEST;
+    int len = __ADDR_LEN__;
+
+    for (int i = 0; i < GRP_COUNT; i++) {
+        if (grp_db[i].is_joined) {
+            if (notify_grp(grp_db[i].grp_name, msg) == -1) {
+                exit(EXIT_FAILURE);
+            }
+        }
+    }
+
+    peer_msg recvmsg;
+    if (fork() == 0) {
+        alarm(60);
+        while (to_poll) {
+            int n = recvfrom(ucast_recvfd, &recvmsg, LARGE_STR_LEN, 0, (__SA__*)&ucast_recv_addr, &len);
+            if (n < 0) {
+                err_exit("recvfrom()");
+                continue;
+            }
+            if (recvmsg.msg_type != FILE_REQUEST_RESPONSE) 
+                continue;
+            if (recvmsg.flag == 1) {
+                download_file(recvmsg.msg_buff, filename);
+                exit(EXIT_SUCCESS);
+            }
+        }
+        to_poll = 1;
+        exit(EXIT_SUCCESS);
+    }
+}
+
+void handle_file_request(peer_msg request_msg) {
+
+    peer_msg response_msg;
+    memset(&(response_msg.msg_buff), 0, LARGE_STR_LEN);
+    strcpy(response_msg.sender_ip, unicast_ip);
+    response_msg.msg_type = FILE_REQUEST_RESPONSE;
+
+    int response_fd = socket(AF_INET, SOCK_DGRAM, 0);
+    struct sockaddr_in response_addr;
+    memset(&response_addr, 0, __ADDR_LEN__);
+
+    response_addr.sin_family = AF_INET;
+    response_addr.sin_port = htons(UCAST_PORT);
+    response_addr.sin_addr.s_addr = inet_addr(request_msg.sender_ip);
+
+    response_msg.flag = 0;
+    for (int i = 0; i < AVAILABLE_FILE_COUNT; i++) {
+        if (strcmp(request_msg.msg_buff, files_available[i]) == 0) {
+            // found
+            response_msg.flag = 1;
+            break;
+        }
+    }
+
+    int sent = sendto(response_fd, &response_msg, sizeof(peer_msg), 0, (__SA__*)&response_addr, __ADDR_LEN__);
+    if (sent < 0) {
+        err_exit("sendto()");
+        exit(EXIT_FAILURE);
+    }
+}
 
 /* ------------------------------------------------------------ */
 
 
 int main(int argc, const char *argv[]) {
 
+    signal(SIGALRM, poll_timeout_handler);
+
     bcastfd = socket(AF_INET, SOCK_DGRAM, 0);
     if (bcastfd < 0) {
         err_exit("socket()");
         exit(EXIT_FAILURE);
     }
-    memset(&bcastAddr, 0, sizeof(struct sockaddr_in));
-    bcastAddr.sin_family = AF_INET;
-    bcastAddr.sin_port = htons(BCAST_PORT);
-    bcastAddr.sin_addr.s_addr = inet_addr("255.255.255.255");
+    memset(&bcast_addr, 0, __ADDR_LEN__);
+    bcast_addr.sin_family = AF_INET;
+    bcast_addr.sin_port = htons(BCAST_PORT);
+    bcast_addr.sin_addr.s_addr = inet_addr("255.255.255.255");
 
     int bcastEnable = 1;
     if (setsockopt(bcastfd, SOL_SOCKET, SO_BROADCAST, &bcastEnable, sizeof(bcastEnable)) < 0) {
@@ -352,8 +437,23 @@ int main(int argc, const char *argv[]) {
         exit(EXIT_FAILURE);
     }
 
+    ucast_recvfd = socket(AF_INET, SOCK_DGRAM, 0);
+    memset(&ucast_recv_addr, 0, __ADDR_LEN__);
+    ucast_recv_addr.sin_family = AF_INET;
+    ucast_recv_addr.sin_port = htons(UCAST_PORT);
+    ucast_recv_addr.sin_addr.s_addr = htonl(INADDR_ANY);
+
+    if (bind(ucast_recvfd, (__SA__*)&ucast_recv_addr, __ADDR_LEN__) < 0) {
+        err_exit("bind()");
+        exit(EXIT_FAILURE);
+    }
+
     FD_ZERO(&global_readset);
     FD_SET(0, &global_readset);
+
+    printf("Enter your local IP, to be used for unicast communication: ");
+    fgets(unicast_ip, 16, stdin);
+    unicast_ip[strlen(unicast_ip)-1] = 0;
 
     printf("List of avaiable commands:\n");
     printf("-> create-grp <grp_name> <mcast IP> <port>\n");
@@ -399,9 +499,6 @@ int main(int argc, const char *argv[]) {
             else if (strcmp(tokens[0], "search-grp") == 0) {
                 search_for_grp(tokens[1]);
             }
-            else if (strcmp(tokens[0], "get-file") == 0) {
-                download_file(tokens[1]);
-            }
             else if (strcmp(tokens[0], "start-poll") == 0) {
                 create_poll(tokens[1]);
             }
@@ -421,20 +518,20 @@ int main(int argc, const char *argv[]) {
             }
         }
 
-        for (int i = 0; i < grp_count; i++) {
+        for (int i = 0; i < GRP_COUNT; i++) {
             if (grp_db[i].is_joined) {
                 int sockfd = grp_db[i].recv_sockfd;
                 struct sockaddr_in addr = grp_db[i].recv_addr;
-                int len = sizeof(addr);
+                int len = __ADDR_LEN__;
 
                 if (FD_ISSET(sockfd, &readset)) {
                     peer_msg msg;
-                    int read = recvfrom(sockfd, &msg, LARGE_STR_LEN, 0, (struct sockaddr*)&addr, len);
+                    int read = recvfrom(sockfd, &msg, LARGE_STR_LEN, 0, (__SA__*)&addr, len);
                     // handle response for every message type
                     switch(msg.msg_type) {
+
                         case FILE_ADVERTISE:
                             {
-                                // verify file list received
                                 char missing_files[LARGE_STR_LEN];
                                 char *dup_list = strdup(msg.msg_buff);
                                 char *token = strtok(dup_list, __SPACE__);
@@ -442,7 +539,7 @@ int main(int argc, const char *argv[]) {
                                 while (token) {
                                     // search for this token in the list of file available
                                     bool found = false;
-                                    for (int i = 0; i < num_files_available; i++) {
+                                    for (int i = 0; i < AVAILABLE_FILE_COUNT; i++) {
                                         if (strcmp(files_available[i], token) == 0) {
                                             found=true;
                                             break;
@@ -450,13 +547,13 @@ int main(int argc, const char *argv[]) {
                                     }
                                     if (!found) {
                                         // send request for all missing files 
-                                        //
+                                        send_file_request(token);
                                     }
                                     token = strtok(NULL, __SPACE__);
                                 }
                                 free(dup_list);
 
-                                // forward file advertise to other grps
+                                // forward file advertisement to other grps
                                 // forward_msg(msg, grp_db[i].grp_name, grp_db[i].grp_name);
                             }
                             break;
@@ -464,6 +561,7 @@ int main(int argc, const char *argv[]) {
                         case FILE_REQUEST:
                             {
                                 // respond with yes/no
+                                handle_file_request(msg);
                                 // forward request to other grps
                             }
                             break;
@@ -471,7 +569,24 @@ int main(int argc, const char *argv[]) {
                         case POLL:
                             {
                                 // handle poll request
+                                printf("A member initiated a new poll in the group <%s>\n", grp_db[i].grp_name);
+                                printf("Poll Question:\n\t%s", msg.msg_buff);
+                                char response[SMALL_STR_LEN];
+                                printf("Enter response yes/no: ");
+                                fgets(response, SMALL_STR_LEN, stdin);
+                                response[strlen(response)-1] = 0;
+
                                 // send response
+                                peer_msg send_resp;
+                                strcpy(send_resp.msg_buff, response);
+                                strcpy(send_resp.sender_ip, unicast_ip);
+                                send_resp.msg_type = POLL_RESPONSE;
+                                int send_poll = sendto(sockfd, &send_resp, sizeof(peer_msg), 0, (__SA__*)&addr, &len);
+
+                                if (send_poll < 0) {
+                                    err_exit("sendto()");
+                                    exit(EXIT_FAILURE);
+                                }
                             }
                             break;
                     }
