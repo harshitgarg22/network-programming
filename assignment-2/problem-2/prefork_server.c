@@ -221,11 +221,10 @@ int main(int argc, char *argv[]) {
             --numConnections;
             if (numConnectionsSoFar >= MaxRequestsPerChild) {
                 printf("Flushing child %d because it exceeded maximum connection limit\n", getpid());
-                exit(0);
+                break;
             }
         }
     }
-    wait(NULL);
     while (myChildren != NULL) {
         pid_t kick = myChildren->pid;
         childData *delete = myChildren;

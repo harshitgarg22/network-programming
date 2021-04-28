@@ -1,0 +1,102 @@
+rm -rf 
+rm -rf prefork_server
+gcc -Wall -Wextra  prefork_server.c -o prefork_server
+./prefork_server 2 4 16
+Listening on Port: 12345...
+Child 918432 recevied data from 127.0.0.1:38112 :
+ GET / HTTP/1.0
+Host: 127.0.0.1:12345
+User-Agent: ApacheBench/2.3
+Accept: */*
+
+Child 918432 recevied data from 127.0.0.1:39648 :
+ GET / HTTP/1.0
+Host: 127.0.0.1:12345
+User-Agent: ApacheBench/2.3
+Accept: */*
+
+Child 918432 recevied data from 127.0.0.1:41696 :
+ GET / HTTP/1.0
+Host: 127.0.0.1:12345
+User-Agent: ApacheBench/2.3
+Accept: */*
+
+Child 918432 recevied data from 127.0.0.1:43744 :
+ GET / HTTP/1.0
+Host: 127.0.0.1:12345
+User-Agent: ApacheBench/2.3
+Accept: */*
+
+Child 918432 recevied data from 127.0.0.1:45792 :
+ GET / HTTP/1.0
+Host: 127.0.0.1:12345
+User-Agent: ApacheBench/2.3
+Accept: */*
+
+Child 918432 recevied data from 127.0.0.1:50912 :
+ GET / HTTP/1.0
+Host: 127.0.0.1:12345
+User-Agent: ApacheBench/2.3
+Accept: */*
+
+Child 918432 recevied data from 127.0.0.1:52960 :
+ GET / HTTP/1.0
+Host: 127.0.0.1:12345
+User-Agent: ApacheBench/2.3
+Accept: */*
+
+Child 918432 recevied data from 127.0.0.1:55008 :
+ GET / HTTP/1.0
+Host: 127.0.0.1:12345
+User-Agent: ApacheBench/2.3
+Accept: */*
+
+Child 918432 recevied data from 127.0.0.1:57056 :
+ GET / HTTP/1.0
+Host: 127.0.0.1:12345
+User-Agent: ApacheBench/2.3
+Accept: */*
+
+Child 918432 recevied data from 127.0.0.1:59104 :
+ GET / HTTP/1.0
+Host: 127.0.0.1:12345
+User-Agent: ApacheBench/2.3
+Accept: */*
+
+Child 918432 recevied data from 127.0.0.1:61152 :
+ GET / HTTP/1.0
+Host: 127.0.0.1:12345
+User-Agent: ApacheBench/2.3
+Accept: */*
+
+Child 918432 recevied data from 127.0.0.1:63200 :
+ GET / HTTP/1.0
+Host: 127.0.0.1:12345
+User-Agent: ApacheBench/2.3
+Accept: */*
+
+Child 918432 recevied data from 127.0.0.1:225 :
+ GET / HTTP/1.0
+Host: 127.0.0.1:12345
+User-Agent: ApacheBench/2.3
+Accept: */*
+
+Child 918432 recevied data from 127.0.0.1:2273 :
+ GET / HTTP/1.0
+Host: 127.0.0.1:12345
+User-Agent: ApacheBench/2.3
+Accept: */*
+
+Child 918432 recevied data from 127.0.0.1:4321 :
+ GET / HTTP/1.0
+Host: 127.0.0.1:12345
+User-Agent: ApacheBench/2.3
+Accept: */*
+
+Child 918432 recevied data from 127.0.0.1:6369 :
+ GET / HTTP/1.0
+Host: 127.0.0.1:12345
+User-Agent: ApacheBench/2.3
+Accept: */*
+
+Flushing child 918432 because it exceeded maximum connection limit
