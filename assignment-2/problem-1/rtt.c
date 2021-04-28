@@ -1,6 +1,3 @@
-////////////////////////////////////////////
-// Included libraries
-////////////////////////////////////////////
 #include <stdio.h>
 #include <stdlib.h>
 #include <arpa/inet.h>
@@ -19,49 +16,10 @@
 #include <netinet/icmp6.h>
 #include <signal.h>
 #include <sys/time.h>
-////////////////////////////////////////////
-// Constants
-////////////////////////////////////////////
 
 #define datalen 56
-////////////////////////////////////////////
-// Data Structures
-////////////////////////////////////////////
+#define	BUFSIZE	1500
 
-#define	BUFSIZE		1500
-
-// 			/* globals */
-// char	 recvbuf[BUFSIZE];
-// char	 sendbuf[BUFSIZE];
-
-// // int		 datalen;			/* #bytes of data, following ICMP header */
-// char	*host;
-// int		 nsent;				/* add 1 for each sendto() */
-// pid_t	 pid;				/* our PID */
-// int		 sockfd;
-// int		 verbose;
-
-			/* function prototypes */
-// void	 proc_v4(char *, ssize_t, struct timeval *);
-// void	 proc_v6(char *, ssize_t, struct timeval *);
-// void	 send_v4(void);
-// void	 send_v6(void);
-// void	 readloop(void);
-// void	 sig_alrm(int);
-// void	 tv_sub(struct timeval *, struct timeval *);
-
-// struct proto {
-//   void	 (*fproc)(char *, ssize_t, struct timeval *);
-//   void	 (*fsend)(void);
-//   struct sockaddr  *sasend;	/* sockaddr{} for send, from getaddrinfo */
-//   struct sockaddr  *sarecv;	/* sockaddr{} for receiving */
-//   socklen_t	    salen;		/* length of sockaddr{}s */
-//   int	   	    icmpproto;	/* IPPROTO_xxx value for ICMP */
-// } *pr;
-
-////////////////////////////////////////////
-// Functions
-////////////////////////////////////////////
 
 void tv_sub(struct timeval *out, struct timeval *in)
 {
@@ -141,7 +99,7 @@ double rtt_from_resp6(char* ptr, int len, struct timeval* tvrecv){
 
 	if (icmp6->icmp6_type == ICMP6_ECHO_REPLY) {
 		if (icmp6->icmp6_id != getpid())
-			return;			/* not a response to our ECHO_REQUEST */
+			return -1;			/* not a response to our ECHO_REQUEST */
 		if (icmp6len < 16)
 			exit_protocol("icmp6 response length (<16)");
 
@@ -191,9 +149,8 @@ double rtt_from_resp4(char* ptr, int len, struct timeval* tvrecv){
 			exit_protocol("icmp response length (less than 16)");
 
 		tvsendptr = (struct timeval *) icmp->icmp_data;
-		tv_sub(&tvrecv, tvsendptr);
+		tv_sub(tvrecv, tvsendptr);
 		rtt = tvrecv->tv_sec * 1000.0 + tvrecv->tv_usec / 1000.0;
-
 		return rtt;
 	}
 	return -1;
@@ -214,9 +171,11 @@ void print_rtts(char* target_ip, struct addrinfo *ai){
 		setuid(getuid());
 		int size = 60 * 1024;		/* OK if setsockopt fails */
 		setsockopt(sockfd, SOL_SOCKET, SO_RCVBUF, &size, sizeof(size));
-
+		
 		int seq = 0;
 
+		// RTT 1
+		seq = 0;
 		send_ipv4(sendbuf, seq, sockfd, ai->ai_addr, ai->ai_addrlen);
 
 		struct timeval tvrecv;
@@ -235,9 +194,56 @@ void print_rtts(char* target_ip, struct addrinfo *ai){
 			}
 			gettimeofday(&tvrecv, NULL);
 			
-			if (rtt1 = rtt_from_resp4(recvbuf, n, &tvrecv) > 0)
+			if ((rtt1 = rtt_from_resp4(recvbuf, n, &tvrecv)) > 0)
 				break;
 		}
+		// RTT 2
+		seq = 0;
+		send_ipv4(sendbuf, seq, sockfd, ai->ai_addr, ai->ai_addrlen);
+
+		for ( ; ; ) {
+			int len = ai->ai_addrlen;
+			struct sockaddr_in src_addr;
+			char recvbuf[BUFSIZE];
+			int n = recvfrom(sockfd, recvbuf, sizeof(recvbuf), 0, (struct sockaddr*)&src_addr, &len);
+			if (n < 0) {
+				if (errno == EINTR)
+					continue;
+				else{
+					perror("recvfrom");
+					exit_protocol("recvfrom");
+				}
+			}
+			gettimeofday(&tvrecv, NULL);
+			
+			if ((rtt2 = rtt_from_resp4(recvbuf, n, &tvrecv)) > 0)
+				break;
+		}
+	
+		// RTT 3
+		seq = 0;
+		send_ipv4(sendbuf, seq, sockfd, ai->ai_addr, ai->ai_addrlen);
+
+		for ( ; ; ) {
+			int len = ai->ai_addrlen;
+			struct sockaddr_in src_addr;
+			char recvbuf[BUFSIZE];
+			int n = recvfrom(sockfd, recvbuf, sizeof(recvbuf), 0, (struct sockaddr*)&src_addr, &len);
+			if (n < 0) {
+				if (errno == EINTR)
+					continue;
+				else{
+					perror("recvfrom");
+					exit_protocol("recvfrom");
+				}
+			}
+			gettimeofday(&tvrecv, NULL);
+			
+			if ((rtt3 = rtt_from_resp4(recvbuf, n, &tvrecv)) > 0)
+				break;
+		}
+
+		printf ("%s %lf ms %lf ms %lf ms \n", target_ip, rtt1, rtt2, rtt3);
 	}	
 	else if (ai->ai_family == AF_INET6){
 		pid  = getpid();
@@ -253,8 +259,10 @@ void print_rtts(char* target_ip, struct addrinfo *ai){
 		int size = 60 * 1024;		/* OK if setsockopt fails */
 		setsockopt(sockfd, SOL_SOCKET, SO_RCVBUF, &size, sizeof(size));
 
+		int seq;
+
 		// send here
-		int seq = 0;
+		seq = 0;
 		send_ipv6(sendbuf, seq, sockfd, ai->ai_addr, ai->ai_addrlen);
 
 		// recv here
@@ -268,7 +276,45 @@ void print_rtts(char* target_ip, struct addrinfo *ai){
 			}
 			struct timeval tvalrecv;
 			gettimeofday(&tvalrecv, NULL);
-			if (rtt1 = rtt_from_resp6(recvbuf, n, &tvalrecv) > 0)
+			if ((rtt1 = rtt_from_resp6(recvbuf, n, &tvalrecv)) > 0)
+				break;
+		}
+
+		// send here
+		seq = 1;
+		send_ipv6(sendbuf, seq, sockfd, ai->ai_addr, ai->ai_addrlen);
+
+		// recv here
+		for ( ; ; ) {
+			int len = ai->ai_addrlen;
+			struct sockaddr_in6* sarecv;
+			char recvbuf[BUFSIZE];
+			int n = recvfrom(sockfd, recvbuf, sizeof(recvbuf), 0, (struct sockaddr*) sarecv, &len);
+			if (n < 0) {
+				exit_protocol("recvfrom");
+			}
+			struct timeval tvalrecv;
+			gettimeofday(&tvalrecv, NULL);
+			if ((rtt1 = rtt_from_resp6(recvbuf, n, &tvalrecv)) > 0)
+				break;
+		}
+
+		// send here
+		seq = 2;
+		send_ipv6(sendbuf, seq, sockfd, ai->ai_addr, ai->ai_addrlen);
+
+		// recv here
+		for ( ; ; ) {
+			int len = ai->ai_addrlen;
+			struct sockaddr_in6* sarecv;
+			char recvbuf[BUFSIZE];
+			int n = recvfrom(sockfd, recvbuf, sizeof(recvbuf), 0, (struct sockaddr*) sarecv, &len);
+			if (n < 0) {
+				exit_protocol("recvfrom");
+			}
+			struct timeval tvalrecv;
+			gettimeofday(&tvalrecv, NULL);
+			if ((rtt1 = rtt_from_resp6(recvbuf, n, &tvalrecv)) > 0)
 				break;
 		}
 	}
@@ -284,152 +330,34 @@ int main(int argc, char* argv[]){
         exit(1);
     }
 
-    char* target_ip = argv[1];
+	FILE* fips = fopen (argv[1],"r");
+    if (fips == NULL){
+        printf ("Error opening file with list of IP addresses\n");
+        exit (1);
+    }
 
-    int n;
-    struct addrinfo hints, *res;
-    bzero (&hints, sizeof (struct addrinfo));
-    if ( (n = getaddrinfo(target_ip, NULL, &hints, &res)) != 0)
-		exit_protocol("getaddrinfo");
-    print_rtts (target_ip, res);
+	char* line = NULL;
+    size_t bytes_read;
+    ssize_t n = 0;
+    while ((bytes_read = getline(&line, &n, fips)) != -1) {        
+        if (line[bytes_read-1] == '\n')
+            line[bytes_read-1] = '\0';
+		int pid = fork();
+		if (pid == 0){
+			int n;
+			struct addrinfo hints, *res;
+			bzero (&hints, sizeof (struct addrinfo));
+			if ( (n = getaddrinfo(line, NULL, &hints, &res)) != 0)
+				exit_protocol("getaddrinfo");
+			print_rtts (line, res);
+			free(line);
+			exit(1);
+		}
+		else if (pid < 0) {
+			exit_protocol("fork()");
+		}
+        free(line);
+    }
+
     return 0;
 }
-
-// void readloop(void)
-// {
-// 	int				size;
-// 	char			recvbuf[BUFSIZE];
-// 	socklen_t		len;
-// 	ssize_t			n;
-// 	struct timeval	tval;
-
-// 	sockfd = Socket(pr->sasend->sa_family, SOCK_RAW, pr->icmpproto);
-// 	setuid(getuid());		/* don't need special permissions any more */
-
-// 	size = 60 * 1024;		/* OK if setsockopt fails */
-// 	setsockopt(sockfd, SOL_SOCKET, SO_RCVBUF, &size, sizeof(size));
-
-// 	sig_alrm(SIGALRM);		/* send first packet */
-
-// 	for ( ; ; ) {
-// 		len = pr->salen;
-// 		n = recvfrom(sockfd, recvbuf, sizeof(recvbuf), 0, pr->sarecv, &len);
-// 		if (n < 0) {
-// 			exit_protocol("recvfrom");
-// 		}
-
-// 		gettimeofday(&tval, NULL);
-// 		(*pr->fproc)(recvbuf, n, &tval);
-// 	}
-// }
-
-// void proc_v4(char *ptr, ssize_t len, struct timeval *tvrecv)
-// {
-// 	int				hlen1, icmplen;
-// 	double			rtt;
-// 	struct ip		*ip;
-// 	struct icmp		*icmp;
-// 	struct timeval	*tvsend;
-
-// 	ip = (struct ip *) ptr;		/* start of IP header */
-// 	hlen1 = ip->ip_hl << 2;		/* length of IP header */
-
-// 	icmp = (struct icmp *) (ptr + hlen1);	/* start of ICMP header */
-// 	if ( (icmplen = len - hlen1) < 8)
-// 		err_quit("icmplen (%d) < 8", icmplen);
-
-// 	if (icmp->icmp_type == ICMP_ECHOREPLY) {
-// 		if (icmp->icmp_id != pid)
-// 			return;			/* not a response to our ECHO_REQUEST */
-// 		if (icmplen < 16)
-// 			err_quit("icmplen (%d) < 16", icmplen);
-
-// 		tvsend = (struct timeval *) icmp->icmp_data;
-// 		tv_sub(tvrecv, tvsend);
-// 		rtt = tvrecv->tv_sec * 1000.0 + tvrecv->tv_usec / 1000.0;
-
-// 		printf("%d bytes from %s: seq=%u, ttl=%d, rtt=%.3f ms\n",
-// 				icmplen, Sock_ntop_host(pr->sarecv, pr->salen),
-// 				icmp->icmp_seq, ip->ip_ttl, rtt);
-
-// 	} else if (verbose) {
-// 		printf("  %d bytes from %s: type = %d, code = %d\n",
-// 				icmplen, Sock_ntop_host(pr->sarecv, pr->salen),
-// 				icmp->icmp_type, icmp->icmp_code);
-// 	}
-// }
-
-// void proc_v6(char *ptr, ssize_t len, struct timeval* tvrecv)
-// {
-// 	int					hlen1, icmp6len;
-// 	double				rtt;
-// 	struct ip6_hdr		*ip6;
-// 	struct icmp6_hdr	*icmp6;
-// 	struct timeval		*tvsend;
-
-// 	ip6 = (struct ip6_hdr *) ptr;		/* start of IPv6 header */
-// 	hlen1 = sizeof(struct ip6_hdr);
-// 	if (ip6->ip6_nxt != IPPROTO_ICMPV6)
-// 		err_quit("next header not IPPROTO_ICMPV6");
-
-// 	icmp6 = (struct icmp6_hdr *) (ptr + hlen1);
-// 	if ( (icmp6len = len - hlen1) < 8)
-// 		err_quit("icmp6len (%d) < 8", icmp6len);
-
-// 	if (icmp6->icmp6_type == ICMP6_ECHO_REPLY) {
-// 		if (icmp6->icmp6_id != pid)
-// 			return;			/* not a response to our ECHO_REQUEST */
-// 		if (icmp6len < 16)
-// 			err_quit("icmp6len (%d) < 16", icmp6len);
-
-// 		tvsend = (struct timeval *) (icmp6 + 1);
-// 		tv_sub(tvrecv, tvsend);
-// 		rtt = tvrecv->tv_sec * 1000.0 + tvrecv->tv_usec / 1000.0;
-
-// 		printf("%d bytes from %s: seq=%u, hlim=%d, rtt=%.3f ms\n",
-// 				icmp6len, Sock_ntop_host(pr->sarecv, pr->salen),
-// 				icmp6->icmp6_seq, ip6->ip6_hlim, rtt);
-
-// 	} else if (verbose) {
-// 		printf("  %d bytes from %s: type = %d, code = %d\n",
-// 				icmp6len, Sock_ntop_host(pr->sarecv, pr->salen),
-// 				icmp6->icmp6_type, icmp6->icmp6_code);
-// 	}
-// }
-
-// void send_v4(void)
-// {
-// 	int			len;
-// 	struct icmp	*icmp;
-
-// 	icmp = (struct icmp *) sendbuf;
-// 	icmp->icmp_type = ICMP_ECHO;
-// 	icmp->icmp_code = 0;
-// 	icmp->icmp_id = pid;
-// 	icmp->icmp_seq = nsent++;
-// 	Gettimeofday((struct timeval *) icmp->icmp_data, NULL);
-
-// 	len = 8 + datalen;		/* checksum ICMP header and data */
-// 	icmp->icmp_cksum = 0;
-// 	icmp->icmp_cksum = in_cksum((u_short *) icmp, len);
-
-// 	Sendto(sockfd, sendbuf, len, 0, pr->sasend, pr->salen);
-// }
-
-// void send_v6()
-// {
-// 	int					len;
-// 	struct icmp6_hdr	*icmp6;
-
-// 	icmp6 = (struct icmp6_hdr *) sendbuf;
-// 	icmp6->icmp6_type = ICMP6_ECHO_REQUEST;
-// 	icmp6->icmp6_code = 0;
-// 	icmp6->icmp6_id = pid;
-// 	icmp6->icmp6_seq = nsent++;
-// 	Gettimeofday((struct timeval *) (icmp6 + 1), NULL);
-
-// 	len = 8 + datalen;		/* 8-byte ICMPv6 header */
-
-// 	Sendto(sockfd, sendbuf, len, 0, pr->sasend, pr->salen);
-// 		/* 4kernel calculates and stores checksum for us */
-// }
