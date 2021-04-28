@@ -30,7 +30,7 @@ typedef struct pinginfo {
 
 void tv_sub(struct timeval *out, struct timeval *in)
 {
-	if ( (out->tv_usec -= in->tv_usec) < 0) {	/* out -= in */
+	if ((out->tv_usec -= in->tv_usec) < 0) {
 		--out->tv_sec;
 		out->tv_usec += 1000000;
 	}
@@ -48,26 +48,19 @@ uint16_t in_cksum(uint16_t *addr, int len)
 	uint32_t sum = 0;
 	uint16_t *w = addr;
 	uint16_t answer = 0;
-	/*
-	* Our algorithm is simple, using a 32 bit accumulator (sum), we add
-	* sequential 16 bit words to it, and at the end, fold back all the
-	* carry bits from the top 16 bits into the lower 16 bits.
-	*/
 	while (nleft > 1)
 	{
 		sum += *w++;
 		nleft -= 2;
 	}
-	/* mop up an odd byte, if necessary */
 	if (nleft == 1)
 	{
 		*(unsigned char *)(&answer) = *(unsigned char *)w;
 		sum += answer;
 	}
-	/* add back carry outs from top 16 bits to low 16 bits */
-	sum = (sum >> 16) + (sum & 0xffff); /* add hi 16 to low 16 */
-	sum += (sum >> 16);					/* add carry */
-	answer = ~sum;						/* truncate to 16 bits */
+	sum = (sum >> 16) + (sum & 0xffff);
+	sum += (sum >> 16);
+	answer = ~sum;
 	return (answer);
 }
 
@@ -82,10 +75,9 @@ void send_ipv6(char* sendbuf, int seq, int sockfd, struct sockaddr* sasend, sock
 	icmp6->icmp6_seq = seq;
 	gettimeofday((struct timeval *) (icmp6 + 1), NULL);
 
-	len = 8 + datalen;		/* 8-byte ICMPv6 header */
+	len = 8 + datalen;
 
 	sendto(sockfd, sendbuf, len, 0, sasend, salen);
-		/* kernel calculates and stores checksum for us */
 }
 
 double rtt_from_resp6(char* ptr, int len, struct timeval* tvrecv){
@@ -95,7 +87,7 @@ double rtt_from_resp6(char* ptr, int len, struct timeval* tvrecv){
 	struct icmp6_hdr *icmp6;
 	struct timeval *tvsend;
 
-	ip6 = (struct ip6_hdr *) ptr;		/* start of IPv6 header */
+	ip6 = (struct ip6_hdr *) ptr;
 	hlen1 = sizeof(struct ip6_hdr);
 	if (ip6->ip6_nxt != IPPROTO_ICMPV6)
 		exit_protocol("header (not IPPROTO_ICMPV6)");
@@ -106,7 +98,7 @@ double rtt_from_resp6(char* ptr, int len, struct timeval* tvrecv){
 
 	if (icmp6->icmp6_type == ICMP6_ECHO_REPLY) {
 		if (icmp6->icmp6_id != getpid())
-			return -1;			/* not a response to our ECHO_REQUEST */
+			return -1;
 		if (icmp6len < 16)
 			exit_protocol("icmp6 response length (<16)");
 
@@ -129,7 +121,7 @@ void send_ipv4(char* sendbuf, int seq, int sockfd, struct sockaddr* sasend, sock
 	icmp->icmp_seq = 0;
 	gettimeofday((struct timeval *) icmp->icmp_data, NULL);
 
-	len = 8 + datalen;		/* checksum ICMP header and data */
+	len = 8 + datalen;
 	icmp->icmp_cksum = 0;
 	icmp->icmp_cksum = in_cksum((u_short *) icmp, len);
 
@@ -143,15 +135,15 @@ double rtt_from_resp4(char* ptr, int len, struct timeval* tvrecv){
 	struct icmp	*icmp;
 	struct timeval *tvsendptr;
 
-	ip = (struct ip *) ptr;		/* start of IP header */
-	hlen1 = ip->ip_hl << 2;		/* length of IP header */
-	icmp = (struct icmp *) (ptr + hlen1);	/* start of ICMP header */
+	ip = (struct ip *) ptr;	
+	hlen1 = ip->ip_hl << 2;	
+	icmp = (struct icmp *) (ptr + hlen1);
 	if ( (icmplen = len - hlen1) < 8)
 		exit_protocol("icmp response length (less than 8)");
 
 	if (icmp->icmp_type == ICMP_ECHOREPLY) {
 		if (icmp->icmp_id != getpid())
-			return -1;		/* not a response to our ECHO_REQUEST */
+			return -1;
 		if (icmplen < 16)
 			exit_protocol("icmp response length (less than 16)");
 
@@ -180,7 +172,7 @@ int getsocket(struct addrinfo * ai){
 		exit_protocol ("socket()");
 	}
 	setuid(getuid());
-	int size = 60 * 1024;		/* OK if setsockopt fails */
+	int size = 120 * 1024;
 	setsockopt(sockfd, SOL_SOCKET, SO_RCVBUF, &size, sizeof(size));
 	if (connect(sockfd, ai->ai_addr, ai->ai_addrlen) == -1){
 		exit_protocol("connect");
@@ -199,7 +191,6 @@ int main(int argc, char* argv[]){
         printf ("Error opening file with list of IP addresses\n");
         exit (1);
     }
-	//todo: make epoll instance and make receiving loop
 	int efd = epoll_create(20000);
 	struct epoll_event ev;
 
