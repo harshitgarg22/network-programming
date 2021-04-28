@@ -69,6 +69,14 @@ void handle_sigint_parent(int sig) {
         die("SIGINT not detected");
     }
 }
+void handle_sigchld(int sig) {
+    if (sig == SIGCHLD) {
+        wait(NULL);
+        numExist--;
+    } else {
+        die("SIGCHLD not detected");
+    }
+}
 
 void handle_sigint_child(int sig) {
     if (sig == SIGINT) {
@@ -84,6 +92,9 @@ int main(int argc, char *argv[]) {
         die("Incorrect arguments");
     }
     if (signal(SIGINT, handle_sigint_parent) == SIG_ERR) {
+        die("Could not register SIGINT");
+    }
+    if (signal(SIGCHLD, handle_sigchld) == SIG_ERR) {
         die("Could not register SIGINT");
     }
     childData *myChildren = NULL;
@@ -220,8 +231,8 @@ int main(int argc, char *argv[]) {
             sendto(pcfd, data, sizeof(data), 0, (struct sockaddr *)&pcsendaddr, sizeof(pcsendaddr));
             --numConnections;
             if (numConnectionsSoFar >= MaxRequestsPerChild) {
-                kill(getppid(), SIGCHLD);
                 printf("Flushing child %d because it exceeded maximum connection limit\n", getpid());
+                kill(getppid(), SIGCHLD);
                 break;
             }
         }
