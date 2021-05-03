@@ -367,6 +367,12 @@ int main(int argc, char* argv[]){
     // create the main listening socket for the server
     int serv_socket = socket(PF_INET, SOCK_STREAM, IPPROTO_TCP);
     
+
+    if (setsockopt(serv_socket, SOL_SOCKET, SO_REUSEADDR, &(int){ 1 }, sizeof(int)) < 0) {
+		perror("setsockopt");
+        exit(1);
+	}
+
     // make address structure to bind the main listening server to the server port
     struct sockaddr_in serv_addr;
     bzero(&serv_addr, sizeof(serv_addr));

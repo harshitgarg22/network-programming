@@ -271,6 +271,11 @@ void request_handler(){
 
     // bind a socket and start listening on it
     int cliex_sock = socket (PF_INET, SOCK_STREAM, IPPROTO_TCP);
+
+    if (setsockopt(cliex_sock, SOL_SOCKET, SO_REUSEADDR, &(int){ 1 }, sizeof(int)) < 0) {
+		perror("setsockopt");
+	}
+
     struct sockaddr_in cliex_addr;
     bzero(&cliex_addr, sizeof(cliex_addr));
     cliex_addr.sin_port = CLIEX_PORT;
